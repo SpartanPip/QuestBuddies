@@ -1,0 +1,30 @@
+{
+  "enabled": true,
+  "name": "Kiro Development Reporter",
+  "description": "Automatically updates a development report file whenever code changes are made, documenting how Kiro is being used and its impact on development workflow",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.js",
+      "**/*.ts",
+      "**/*.jsx",
+      "**/*.tsx",
+      "**/*.py",
+      "**/*.java",
+      "**/*.cpp",
+      "**/*.c",
+      "**/*.cs",
+      "**/*.go",
+      "**/*.rs",
+      "**/*.php",
+      "**/*.rb",
+      "**/*.swift",
+      "**/*.kt"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A code file has been modified. Please append to the \"Report.txt\" file (create if it doesn't exist) with a brief summary of how Kiro is being used in this development session and how it's helping make development smoother. Keep the entry concise and avoid repetition - focus on new insights, productivity gains, or notable ways Kiro assisted. If the report is getting long, summarize older entries to keep it manageable. The goal is to maintain a living document of the entire development experience with Kiro."
+  }
+}

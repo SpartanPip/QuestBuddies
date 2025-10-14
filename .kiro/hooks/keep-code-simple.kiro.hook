@@ -1,0 +1,26 @@
+{
+  "enabled": true,
+  "name": "Code Simplicity Enforcer",
+  "description": "Monitors code changes to ensure simplicity and prevent unnecessary feature additions beyond requirements",
+  "version": "1",
+  "when": {
+    "type": "fileEdited",
+    "patterns": [
+      "**/*.js",
+      "**/*.ts",
+      "**/*.py",
+      "**/*.java",
+      "**/*.cpp",
+      "**/*.c",
+      "**/*.cs",
+      "**/*.go",
+      "**/*.rs",
+      "**/*.php",
+      "**/*.rb"
+    ]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "Review the code changes and ensure they follow the principle of keeping code AS SIMPLE AS POSSIBLE. Check that no features have been added beyond what was requested. If there are opportunities to simplify the code, suggest specific simplifications. Flag any unnecessary complexity or feature creep."
+  }
+}
