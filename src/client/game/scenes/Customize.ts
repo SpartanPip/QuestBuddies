@@ -255,16 +255,16 @@ export class Customize extends Scene {
     // Create avatar carousel
     this.avatarCarousel = this.createCarousel('avatar', 'Avatar', ['boy', 'girl'], currentY);
     this.carousels.push(this.avatarCarousel);
-    currentY += 200; // Space for carousel
+    currentY += 250; // Optimized space for larger carousel
     
-    currentY += 60; // Space between sections
+    currentY += 40; // Reduced space between sections
     
     // Create weapon carousel
     this.weaponCarousel = this.createCarousel('weapon', 'Weapon', ['sword', 'axe'], currentY);
     this.carousels.push(this.weaponCarousel);
-    currentY += 200; // Space for carousel
+    currentY += 250; // Optimized space for larger carousel
     
-    currentY += 40; // Final padding
+    currentY += 30; // Minimal final padding
     
     // Set content height and update scroll bounds
     this.contentHeight = currentY;
@@ -302,7 +302,7 @@ export class Customize extends Scene {
       : `weapon-${currentValue}`;
     
     const currentImage = this.add.image(width / 2, 100, imageKey);
-    currentImage.setScale(Math.max(0.8, scaleFactor * 1.0));
+    currentImage.setScale(Math.max(2.4, scaleFactor * 3.0));
     container.add(currentImage);
     
     // Arrow button dimensions
