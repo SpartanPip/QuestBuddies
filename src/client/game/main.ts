@@ -2,6 +2,9 @@ import { Boot } from './scenes/Boot';
 import { GameOver } from './scenes/GameOver';
 import { Game as MainGame } from './scenes/Game';
 import { MainMenu } from './scenes/MainMenu';
+import { LevelBuilder } from './scenes/LevelBuilder';
+import { GamePlay } from './scenes/GamePlay';
+import { Customize } from './scenes/Customize';
 import * as Phaser from 'phaser';
 import { AUTO, Game } from 'phaser';
 import { Preloader } from './scenes/Preloader';
@@ -20,7 +23,7 @@ const config: Phaser.Types.Core.GameConfig = {
     width: 1024,
     height: 768,
   },
-  scene: [Boot, Preloader, MainMenu, MainGame, GameOver],
+  scene: [Boot, Preloader, MainMenu, MainGame, GameOver, LevelBuilder, GamePlay, Customize],
 };
 
 const StartGame = (parent: string) => {

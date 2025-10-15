@@ -1,7 +1,9 @@
 import express from 'express';
-import { InitResponse, IncrementResponse, DecrementResponse } from '../shared/types/api';
+import { InitResponse, IncrementResponse, DecrementResponse, SaveLevelRequest, SaveLevelResponse, LoadLevelResponse } from '../shared/types/api';
 import { redis, createServer, context } from '@devvit/web/server';
 import { createPost } from './core/post';
+import { LevelHandler } from './handlers/levelHandler';
+import { PostHandler } from './handlers/postHandler';
 
 const app = express();
 
@@ -13,6 +15,83 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.text());
 
 const router = express.Router();
+
+// Level-related endpoints
+router.post<{ postId: string }, SaveLevelResponse | { status: string; message: string }, SaveLevelRequest>(
+  '/api/save-level',
+  async (req, res): Promise<void> => {
+    const { postId } = context;
+    
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required but missing from context',
+      });
+      return;
+    }
+
+    try {
+      const { levelData } = req.body;
+      
+      if (!levelData) {
+        res.status(400).json({
+          status: 'error',
+          message: 'levelData is required in request body',
+        });
+        return;
+      }
+
+      // Create a new post with the level data
+      const result = await PostHandler.createLevelPost(levelData);
+      
+      res.json({
+        type: 'save-level',
+        postId: result.postId || postId,
+        success: result.success,
+        message: result.message,
+      });
+    } catch (error) {
+      console.error('Error in save-level endpoint:', error);
+      res.status(500).json({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to save level',
+      });
+    }
+  }
+);
+
+router.get<{ postId: string }, LoadLevelResponse | { status: string; message: string }>(
+  '/api/load-level',
+  async (_req, res): Promise<void> => {
+    const { postId } = context;
+    
+    if (!postId) {
+      res.status(400).json({
+        status: 'error',
+        message: 'postId is required but missing from context',
+      });
+      return;
+    }
+
+    try {
+      const result = await LevelHandler.loadLevelData(postId);
+      
+      res.json({
+        type: 'load-level',
+        postId: postId,
+        levelData: result.levelData,
+        success: result.success,
+        message: result.message,
+      });
+    } catch (error) {
+      console.error('Error in load-level endpoint:', error);
+      res.status(500).json({
+        status: 'error',
+        message: error instanceof Error ? error.message : 'Failed to load level',
+      });
+    }
+  }
+);
 
 router.get<{ postId: string }, InitResponse | { status: string; message: string }>(
   '/api/init',
@@ -88,12 +167,19 @@ router.post<{ postId: string }, DecrementResponse | { status: string; message: s
 
 router.post('/internal/on-app-install', async (_req, res): Promise<void> => {
   try {
-    const post = await createPost();
+    const result = await PostHandler.createDefaultPost();
 
-    res.json({
-      status: 'success',
-      message: `Post created in subreddit ${context.subredditName} with id ${post.id}`,
-    });
+    if (result.success) {
+      res.json({
+        status: 'success',
+        message: `Post created in subreddit ${context.subredditName} with id ${result.postId}`,
+      });
+    } else {
+      res.status(400).json({
+        status: 'error',
+        message: result.message,
+      });
+    }
   } catch (error) {
     console.error(`Error creating post: ${error}`);
     res.status(400).json({
@@ -105,11 +191,18 @@ router.post('/internal/on-app-install', async (_req, res): Promise<void> => {
 
 router.post('/internal/menu/post-create', async (_req, res): Promise<void> => {
   try {
-    const post = await createPost();
+    const result = await PostHandler.createDefaultPost();
 
-    res.json({
-      navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${post.id}`,
-    });
+    if (result.success) {
+      res.json({
+        navigateTo: `https://reddit.com/r/${context.subredditName}/comments/${result.postId}`,
+      });
+    } else {
+      res.status(400).json({
+        status: 'error',
+        message: result.message,
+      });
+    }
   } catch (error) {
     console.error(`Error creating post: ${error}`);
     res.status(400).json({

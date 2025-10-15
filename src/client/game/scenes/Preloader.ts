@@ -27,6 +27,40 @@ export class Preloader extends Scene {
     this.load.setPath('assets');
 
     this.load.image('logo', 'logo.png');
+
+    // Load player avatars
+    this.load.image('player-boy', 'players/Boy.png');
+    this.load.image('player-girl', 'players/Girl.png');
+
+    // Load enemy sprites
+    this.load.image('enemy-bug1', 'enemies/bug 1.png');
+    this.load.image('enemy-bug2', 'enemies/bug 2.png');
+    this.load.image('enemy-bug3', 'enemies/bug 3.png');
+
+    // Load weapon sprites
+    this.load.image('weapon-sword', 'weapons/sword.png');
+    this.load.image('weapon-axe', 'weapons/axe.png');
+
+    // Load ground tiles
+    this.load.image('tile-dirt1', 'tiles/dirt ground 1.png');
+    this.load.image('tile-dirt2', 'tiles/dirt ground 2.png');
+    this.load.image('tile-dirt3', 'tiles/dirt ground 3.png');
+    this.load.image('tile-dirt4', 'tiles/dirt ground 4.png');
+    this.load.image('tile-dirt5', 'tiles/dirt ground 5.png');
+    this.load.image('tile-dirt6', 'tiles/dirt ground 6.png');
+    this.load.image('tile-dirt7', 'tiles/dirt ground 7.png');
+    this.load.image('tile-dirt8', 'tiles/dirt ground 8.png');
+    this.load.image('tile-dirt9', 'tiles/dirt ground 9.png');
+    
+    this.load.image('tile-grass1', 'tiles/grass ground 1.png');
+    this.load.image('tile-grass2', 'tiles/grass ground 2.png');
+    this.load.image('tile-grass3', 'tiles/grass ground 3.png');
+    this.load.image('tile-grass4', 'tiles/grass ground 4.png');
+    this.load.image('tile-grass5', 'tiles/grass ground 5.png');
+    this.load.image('tile-grass6', 'tiles/grass ground 6.png');
+    this.load.image('tile-grass7', 'tiles/grass ground 7.png');
+    this.load.image('tile-grass8', 'tiles/grass ground 8.png');
+    this.load.image('tile-grass9', 'tiles/grass ground 9.png');
   }
 
   create() {

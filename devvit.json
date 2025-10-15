@@ -9,7 +9,7 @@
       }
     }
   },
-  "media" : {
+  "media": {
     "dir": "assets"
   },
   "server": {
@@ -29,5 +29,8 @@
   },
   "triggers": {
     "onAppInstall": "/internal/on-app-install"
+  },
+  "dev": {
+    "subreddit": "quest_buddies_dev"
   }
 }
