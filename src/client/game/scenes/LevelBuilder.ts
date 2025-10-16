@@ -14,6 +14,7 @@ export class LevelBuilder extends Scene {
   private isDragging: boolean = false;
   private placementMode: 'tile' | 'enemy' | 'spawn' = 'tile';
   private selectedEnemyType: number = ENEMY_TYPES.BASIC;
+  private selectedTileSprite: string = 'tile-dirt1';
   private isDialogOpen: boolean = false;
   private levelManager: LevelManager;
   private autosaveTimer: number | null = null;
@@ -393,8 +394,9 @@ export class LevelBuilder extends Scene {
 
     if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
       const row = this.levelData.tiles[gridPos.y];
-      if (row && row[gridPos.x] !== this.selectedTileType) {
-        row[gridPos.x] = this.selectedTileType;
+      if (row) {
+        // Use a generic tile type (1 for placed tiles) and store sprite info separately
+        row[gridPos.x] = 1; // Generic "tile exists" marker
         this.renderTileAt(gridPos.x, gridPos.y);
         this.updateLevelManager();
       }
@@ -427,32 +429,12 @@ export class LevelBuilder extends Scene {
   }
 
   private createTileSprite(tileType: number, x: number, y: number, gridX: number, gridY: number): Phaser.GameObjects.Image | null {
-    let spriteKey: string;
-
-    switch (tileType) {
-      case TILE_TYPES.WALL: // WALL - use dirt tiles
-        spriteKey = `tile-dirt${((gridX + gridY) % 9) + 1}`; // Deterministic pattern
-        break;
-      case TILE_TYPES.FLOOR: // FLOOR - use grass tiles
-        spriteKey = `tile-grass${((gridX + gridY) % 9) + 1}`; // Deterministic pattern
-        break;
-      case TILE_TYPES.DECORATION: // DECORATION - use alternating dirt/grass
-        spriteKey = (gridX + gridY) % 2 === 0 ?
-          `tile-dirt${((gridX + gridY) % 9) + 1}` :
-          `tile-grass${((gridX + gridY) % 9) + 1}`;
-        break;
-      default:
-        return null;
-    }
+    // Use the selected tile sprite directly
+    const spriteKey = this.selectedTileSprite;
 
     const tileSprite = this.add.image(x + GRID_SIZE / 2, y + GRID_SIZE / 2, spriteKey);
     tileSprite.setDisplaySize(GRID_SIZE, GRID_SIZE);
     tileSprite.setDepth(0); // Tiles render behind UI elements
-
-    // Add visual distinction for different tile types in builder
-    if (tileType === TILE_TYPES.DECORATION) {
-      tileSprite.setTint(0xCCCCCC); // Slightly lighter tint for decoration tiles
-    }
 
     return tileSprite;
   }
@@ -1017,8 +999,8 @@ export class LevelBuilder extends Scene {
     const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
     dialogContainer.setScrollFactor(0).setDepth(3001);
 
-    // Dialog background
-    const background = this.add.rectangle(0, 0, 500, 400, ColorTheme.SECONDARY_DARK, 0.95);
+    // Dialog background - larger to accommodate more tiles
+    const background = this.add.rectangle(0, 0, 600, 500, ColorTheme.SECONDARY_DARK, 0.95);
     background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
     background.setInteractive();
     background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
@@ -1026,29 +1008,46 @@ export class LevelBuilder extends Scene {
     });
 
     // Title
-    const titleText = this.add.text(0, -170, 'Select Tile Type', {
+    const titleText = this.add.text(0, -220, 'Select Tile', {
       ...ColorTheme.getTextStyle('medium'),
       fontSize: '20px',
       fontStyle: 'bold'
     }).setOrigin(0.5);
 
-    // Tile options grid
+    // All available tile options
     const tileOptions = [
-      { type: TILE_TYPES.WALL, label: 'Wall', color: 0x666666, sprite: 'tile-dirt1' },
-      { type: TILE_TYPES.FLOOR, label: 'Floor', color: 0x888888, sprite: 'tile-grass1' },
-      { type: TILE_TYPES.DECORATION, label: 'Decoration', color: 0xAAAAAAA, sprite: 'tile-dirt2' }
+      // Dirt tiles
+      { sprite: 'tile-dirt1', label: 'Dirt Ground 1' },
+      { sprite: 'tile-dirt2', label: 'Dirt Ground 2' },
+      { sprite: 'tile-dirt3', label: 'Dirt Ground 3' },
+      { sprite: 'tile-dirt4', label: 'Dirt Ground 4' },
+      { sprite: 'tile-dirt5', label: 'Dirt Ground 5' },
+      { sprite: 'tile-dirt6', label: 'Dirt Ground 6' },
+      { sprite: 'tile-dirt7', label: 'Dirt Ground 7' },
+      { sprite: 'tile-dirt8', label: 'Dirt Ground 8' },
+      { sprite: 'tile-dirt9', label: 'Dirt Ground 9' },
+      // Grass tiles
+      { sprite: 'tile-grass1', label: 'Grass Ground 1' },
+      { sprite: 'tile-grass2', label: 'Grass Ground 2' },
+      { sprite: 'tile-grass3', label: 'Grass Ground 3' },
+      { sprite: 'tile-grass4', label: 'Grass Ground 4' },
+      { sprite: 'tile-grass5', label: 'Grass Ground 5' },
+      { sprite: 'tile-grass6', label: 'Grass Ground 6' },
+      { sprite: 'tile-grass7', label: 'Grass Ground 7' },
+      { sprite: 'tile-grass8', label: 'Grass Ground 8' },
+      { sprite: 'tile-grass9', label: 'Grass Ground 9' }
     ];
 
-    const gridContainer = this.add.container(0, -50);
+    const gridContainer = this.add.container(0, -100);
 
     tileOptions.forEach((tileData, index) => {
-      const row = Math.floor(index / 2);
-      const col = index % 2;
-      const x = (col - 0.5) * 120;
+      const row = Math.floor(index / 4); // 4 columns for better layout
+      const col = index % 4;
+      const x = (col - 1.5) * 120; // Center 4 columns
       const y = row * 80;
 
       // Tile preview background
-      const tileButton = this.add.rectangle(x, y, 100, 70, tileData.color, 0.3);
+      const tileButton = this.add.rectangle(x, y, 100, 70, 0x444444, 0.3);
       tileButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
       tileButton.setInteractive();
 
@@ -1059,12 +1058,12 @@ export class LevelBuilder extends Scene {
       // Tile label
       const tileLabel = this.add.text(x, y + 20, tileData.label, {
         ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
+        fontSize: '10px'
       }).setOrigin(0.5);
 
-      // Click handler
+      // Click handler - store the sprite key for direct use
       tileButton.on('pointerdown', () => {
-        this.selectedTileType = tileData.type;
+        this.selectedTileSprite = tileData.sprite;
         this.placementMode = 'tile';
         this.updateModeSelection();
         this.closeSelectionPopup(overlay, dialogContainer);
@@ -1084,7 +1083,7 @@ export class LevelBuilder extends Scene {
     });
 
     // Cancel button
-    const cancelButton = this.add.text(0, 120, 'Cancel', {
+    const cancelButton = this.add.text(0, 170, 'Cancel', {
       ...ColorTheme.getTextStyle('small'),
       fontSize: '16px',
       backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
@@ -1147,9 +1146,9 @@ export class LevelBuilder extends Scene {
 
     // Enemy options grid
     const enemyOptions = [
-      { type: ENEMY_TYPES.BASIC, label: 'Basic', color: 0xFF6666, sprite: 'enemy-bug1', scale: 0.3, tint: 0xff0000 },
-      { type: ENEMY_TYPES.FAST, label: 'Fast', color: 0x66FF66, sprite: 'enemy-bug2', scale: 0.25, tint: 0xff6600 },
-      { type: ENEMY_TYPES.HEAVY, label: 'Heavy', color: 0x6666FF, sprite: 'enemy-bug3', scale: 0.35, tint: 0x660066 }
+      { type: ENEMY_TYPES.BASIC, label: 'Bug 1', color: 0xFF6666, sprite: 'enemy-bug1', scale: 0.3, tint: 0xff0000 },
+      { type: ENEMY_TYPES.FAST, label: 'Bug 2', color: 0x66FF66, sprite: 'enemy-bug2', scale: 0.25, tint: 0xff6600 },
+      { type: ENEMY_TYPES.HEAVY, label: 'Bug 3', color: 0x6666FF, sprite: 'enemy-bug3', scale: 0.35, tint: 0x660066 }
     ];
 
     const gridContainer = this.add.container(0, -50);
