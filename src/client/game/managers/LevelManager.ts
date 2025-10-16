@@ -16,7 +16,7 @@ export class LevelManager {
     const newLevel: LevelData = {
       tiles: this.createEmptyTileGrid(DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE),
       enemies: [],
-      spawn: { x: 5, y: 5 }, // Default spawn position
+      spawn: null, // No default spawn position - user must place one
       metadata: {
         name,
         author,

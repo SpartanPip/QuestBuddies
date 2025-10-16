@@ -1,9 +1,10 @@
 import { Scene } from 'phaser';
+import { ColorTheme } from '../utils/ColorTheme';
 import * as Phaser from 'phaser';
 
 export class GameOver extends Scene {
   camera: Phaser.Cameras.Scene2D.Camera;
-  background: Phaser.GameObjects.Image;
+  background: Phaser.GameObjects.Graphics;
   gameover_text: Phaser.GameObjects.Text;
 
   constructor() {
@@ -13,10 +14,11 @@ export class GameOver extends Scene {
   create() {
     // Configure camera
     this.camera = this.cameras.main;
-    this.camera.setBackgroundColor(0xff0000);
+    this.camera.setBackgroundColor(ColorTheme.BACKGROUND_DARK);
 
-    // Background – create once, full-screen
-    this.background = this.add.image(0, 0, 'background').setOrigin(0).setAlpha(0.5);
+    // Background – create common gradient background
+    this.background = ColorTheme.createMenuGradientBackground(this, this.scale.width, this.scale.height);
+    this.background.setAlpha(0.8); // Slightly transparent for game over effect
 
     // "Game Over" text – created once and scaled responsively
     this.gameover_text = this.add
@@ -49,9 +51,9 @@ export class GameOver extends Scene {
     // Resize camera viewport to prevent black bars
     this.cameras.resize(width, height);
 
-    // Stretch background to fill entire screen
+    // Update background to fill entire screen
     if (this.background) {
-      this.background.setDisplaySize(width, height);
+      ColorTheme.updateMenuGradientBackground(this.background, width, height);
     }
 
     // Compute scale factor (never enlarge above 1×)

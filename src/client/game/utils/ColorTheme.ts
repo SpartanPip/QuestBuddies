@@ -142,4 +142,45 @@ export class ColorTheme {
     if (healthPercent > 0.3) return this.HEALTH_MEDIUM;
     return this.HEALTH_LOW;
   }
+
+  /**
+   * Create a standardized gradient background for all menu scenes
+   */
+  static createMenuGradientBackground(scene: Phaser.Scene, width: number, height: number): Phaser.GameObjects.Graphics {
+    const graphics = scene.add.graphics();
+    
+    // Standard blue-to-teal gradient used across all menus
+    const darkBlue = 0x1e3a8a;      // Deep blue (top-left)
+    const mediumBlue = 0x3b82f6;    // Medium blue (top-right)  
+    const teal = 0x14b8a6;          // Rich teal (bottom-left)
+    const lightTeal = 0x2dd4bf;     // Light teal (bottom-right)
+    
+    graphics.fillGradientStyle(
+      darkBlue, mediumBlue, 1.0, 1.0,     // Top: blue colors
+      teal, lightTeal, 1.0, 1.0           // Bottom: teal colors
+    );
+    graphics.fillRect(0, 0, width, height);
+    graphics.setDepth(-10); // Behind everything
+    
+    return graphics;
+  }
+
+  /**
+   * Update an existing gradient background to new dimensions
+   */
+  static updateMenuGradientBackground(graphics: Phaser.GameObjects.Graphics, width: number, height: number): void {
+    graphics.clear();
+    
+    // Same gradient colors as createMenuGradientBackground
+    const darkBlue = 0x1e3a8a;
+    const mediumBlue = 0x3b82f6;
+    const teal = 0x14b8a6;
+    const lightTeal = 0x2dd4bf;
+    
+    graphics.fillGradientStyle(
+      darkBlue, mediumBlue, 1.0, 1.0,
+      teal, lightTeal, 1.0, 1.0
+    );
+    graphics.fillRect(0, 0, width, height);
+  }
 }

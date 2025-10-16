@@ -5,9 +5,8 @@ import { MenuButton } from '../ui/MenuButton';
 import { ColorTheme } from '../utils/ColorTheme';
 
 export class MainMenu extends Scene {
-  background: GameObjects.Image | null = null;
+  background: GameObjects.Graphics | null = null;
   logo: GameObjects.Image | null = null;
-  title: GameObjects.Text | null = null;
   private levelCheckComplete: boolean = false;
   private hasLevelData: boolean = false;
   private customization: CustomizationData;
@@ -16,6 +15,9 @@ export class MainMenu extends Scene {
   private playButton: MenuButton | null = null;
   private buildButton: MenuButton | null = null;
   private customizeButton: MenuButton | null = null;
+  
+  // Loading indicator
+  private loadingSpinner: GameObjects.Graphics | null = null;
   
   // Keyboard navigation
   private buttons: MenuButton[] = [];
@@ -34,7 +36,6 @@ export class MainMenu extends Scene {
   init(): void {
     this.background = null;
     this.logo = null;
-    this.title = null;
     this.levelCheckComplete = false;
     this.hasLevelData = false;
     
@@ -45,6 +46,10 @@ export class MainMenu extends Scene {
     this.playButton = null;
     this.buildButton = null;
     this.customizeButton = null;
+    
+    // Destroy loading spinner
+    this.loadingSpinner?.destroy();
+    this.loadingSpinner = null;
     
     // Load customization data
     this.customization = StorageUtils.loadCustomization();
@@ -96,16 +101,12 @@ export class MainMenu extends Scene {
     }
   }
 
-  private showLevelInfo(levelName: string, author: string): void {
-    if (this.title) {
-      this.title.setText(`Level: ${levelName}\nBy: ${author}`);
-    }
+  private showLevelInfo(_levelName: string, _author: string): void {
+    // Title removed - level info no longer displayed in title
   }
 
   private showBuilderInfo(): void {
-    if (this.title) {
-      this.title.setText('');
-    }
+    // Title removed - no builder info to clear
   }
 
   /**
@@ -123,21 +124,36 @@ export class MainMenu extends Scene {
   }
 
   /**
-   * Shows loading feedback
+   * Creates a loading spinner next to the play button
    */
-  private showLoadingFeedback(): void {
-    if (this.playButton) {
-      this.playButton.setText('LOADING...');
-      this.playButton.setEnabled(false);
-    }
+  private createLoadingSpinner(x: number, y: number): void {
+    this.loadingSpinner = this.add.graphics();
+    this.loadingSpinner.setPosition(x, y);
+    
+    // Create spinning circle
+    const radius = 12;
+    this.loadingSpinner.lineStyle(3, ColorTheme.PRIMARY_BLUE_LIGHT, 0.8);
+    this.loadingSpinner.beginPath();
+    this.loadingSpinner.arc(0, 0, radius, 0, Math.PI * 1.5);
+    this.loadingSpinner.strokePath();
+    
+    // Animate the spinner
+    this.tweens.add({
+      targets: this.loadingSpinner,
+      rotation: Math.PI * 2,
+      duration: 1000,
+      repeat: -1,
+      ease: 'Linear'
+    });
   }
 
   /**
-   * Hides loading feedback
+   * Removes the loading spinner
    */
-  private hideLoadingFeedback(): void {
-    if (this.playButton && this.levelCheckComplete) {
-      this.updateButtonStates();
+  private removeLoadingSpinner(): void {
+    if (this.loadingSpinner) {
+      this.loadingSpinner.destroy();
+      this.loadingSpinner = null;
     }
   }
 
@@ -273,28 +289,32 @@ export class MainMenu extends Scene {
     // Calculate vertical positioning with better spacing
     const startY = height * 0.6;
     
-    // Play button with keyboard shortcut
+    // Play button - start disabled with "NO LEVEL" text
     this.playButton = new MenuButton(
       this,
       width / 2,
       startY,
-      this.keyboardEnabled ? 'PLAY (1)' : 'PLAY',
+      'NO LEVEL',
       () => this.handlePlayButton(),
       {
-        ...ColorTheme.getButtonStyle('primary'),
+        ...ColorTheme.getButtonStyle('disabled'),
         width: buttonWidth,
         height: buttonHeight,
         fontSize: `${Math.floor(24 * scaleFactor)}px`
       },
       'ONE'
     );
+    this.playButton.setEnabled(false);
+    
+    // Create loading spinner
+    this.createLoadingSpinner(width / 2 + buttonWidth / 2 - 30, startY);
     
     // Build Level button with keyboard shortcut
     this.buildButton = new MenuButton(
       this,
       width / 2,
       startY + buttonHeight + buttonSpacing,
-      this.keyboardEnabled ? 'BUILD LEVEL (2)' : 'BUILD LEVEL',
+      'BUILD LEVEL',
       () => this.handleBuildButton(),
       {
         ...ColorTheme.getButtonStyle('success'),
@@ -310,7 +330,7 @@ export class MainMenu extends Scene {
       this,
       width / 2,
       startY + (buttonHeight + buttonSpacing) * 2,
-      this.keyboardEnabled ? 'CUSTOMIZE (3)' : 'CUSTOMIZE',
+      'CUSTOMIZE',
       () => this.handleCustomizeButton(),
       {
         ...ColorTheme.getButtonStyle('warning'),
@@ -335,6 +355,9 @@ export class MainMenu extends Scene {
    */
   private updateButtonStates(): void {
     if (this.playButton && this.levelCheckComplete) {
+      // Remove loading spinner
+      this.removeLoadingSpinner();
+      
       // Enable/disable play button based on level data availability
       this.playButton.setEnabled(this.hasLevelData);
       
@@ -365,8 +388,7 @@ export class MainMenu extends Scene {
       return;
     }
     
-    // Show loading feedback
-    this.showLoadingFeedback();
+    // Loading spinner is already shown by default
     
     try {
       const result = await ApiUtils.loadLevelFromReddit();
@@ -391,7 +413,19 @@ export class MainMenu extends Scene {
       console.error('Error starting game:', error);
       this.showErrorMessage('Failed to load level. Please try again.');
     } finally {
-      this.hideLoadingFeedback();
+      // Button state will be updated in updateButtonStates()
+    }
+  }
+
+  /**
+   * Hides loading feedback
+   */
+  private hideLoadingFeedback(): void {
+    if (this.playButton && this.levelCheckComplete) {
+      this.updateButtonStates();
+    }
+    if (this.loadingSpinner) {
+      this.loadingSpinner.setVisible(false);
     }
   }
   
@@ -448,17 +482,20 @@ export class MainMenu extends Scene {
       }
     });
     
-    // Update button text for keyboard shortcuts
-    if (this.playButton) {
-      this.playButton.setText(this.keyboardEnabled ? 'PLAY (1)' : 'PLAY');
+    // Update button text (maintain current state)
+    if (this.playButton && this.levelCheckComplete) {
+      // Only update if level check is complete, otherwise keep loading state
+      this.playButton.setText(this.hasLevelData ? 'PLAY' : 'NO LEVEL');
     }
     if (this.buildButton) {
-      this.buildButton.setText(this.keyboardEnabled ? 'BUILD LEVEL (2)' : 'BUILD LEVEL');
+      this.buildButton.setText('BUILD LEVEL');
     }
     if (this.customizeButton) {
-      this.customizeButton.setText(this.keyboardEnabled ? 'CUSTOMIZE (3)' : 'CUSTOMIZE');
+      this.customizeButton.setText('CUSTOMIZE');
     }
   }
+
+
 
   /**
    * Positions and (lightly) scales all UI elements based on the current game size.
@@ -470,11 +507,12 @@ export class MainMenu extends Scene {
     // Resize camera to new viewport to prevent black bars
     this.cameras.resize(width, height);
 
-    // Background – stretch to fill the whole canvas
+    // Background – use common gradient background
     if (!this.background) {
-      this.background = this.add.image(0, 0, 'background').setOrigin(0);
+      this.background = ColorTheme.createMenuGradientBackground(this, width, height);
+    } else {
+      ColorTheme.updateMenuGradientBackground(this.background, width, height);
     }
-    this.background!.setDisplaySize(width, height);
 
     // Logo – keep aspect but scale down for very small screens
     const scaleFactor = Math.min(width / 1024, height / 768);
@@ -484,19 +522,7 @@ export class MainMenu extends Scene {
     }
     this.logo!.setPosition(width / 2, height * 0.25).setScale(scaleFactor);
 
-    // Title text – create once, then scale on resize
-    const baseFontSize = 32;
-    if (!this.title) {
-      this.title = this.add
-        .text(0, 0, 'QuestBuddies', {
-          ...ColorTheme.getTextStyle('large'),
-          fontSize: `${baseFontSize}px`,
-          align: 'center',
-        })
-        .setOrigin(0.5);
-    }
-    this.title!.setPosition(width / 2, height * 0.45);
-    this.title!.setScale(scaleFactor);
+    // Title removed - no longer showing "QuestBuddies" text
     
     // Create buttons if they don't exist
     if (!this.playButton) {

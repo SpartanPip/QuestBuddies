@@ -15,7 +15,7 @@ interface CustomizationCarousel {
 }
 
 export class Customize extends Scene {
-  private background: GameObjects.Image | null = null;
+  private background: GameObjects.Graphics | null = null;
   private title: GameObjects.Text | null = null;
   private currentCustomization: CustomizationData;
   private originalCustomization: CustomizationData;
@@ -25,6 +25,11 @@ export class Customize extends Scene {
   private scrollContainer: GameObjects.Container | null = null;
   private footerContainer: GameObjects.Container | null = null;
   
+  // Background elements
+  private headerBackground: GameObjects.Rectangle | null = null;
+  private footerBackground: GameObjects.Rectangle | null = null;
+  private scrollMask: GameObjects.Graphics | null = null;
+  
   // Customization carousels
   private avatarCarousel: CustomizationCarousel | null = null;
   private weaponCarousel: CustomizationCarousel | null = null;
@@ -32,7 +37,6 @@ export class Customize extends Scene {
   
   // Navigation buttons
   private backButton: MenuButton | null = null;
-  private saveButton: MenuButton | null = null;
   
   // Scroll management
   private scrollY: number = 0;
@@ -60,6 +64,14 @@ export class Customize extends Scene {
     this.scrollContainer = null;
     this.footerContainer = null;
     
+    // Reset background elements
+    this.headerBackground?.destroy();
+    this.footerBackground?.destroy();
+    this.scrollMask?.destroy();
+    this.headerBackground = null;
+    this.footerBackground = null;
+    this.scrollMask = null;
+    
     // Clear existing carousels
     this.carousels.forEach(carousel => {
       carousel.container?.destroy();
@@ -72,9 +84,7 @@ export class Customize extends Scene {
     
     // Destroy existing navigation buttons
     this.backButton?.destroy();
-    this.saveButton?.destroy();
     this.backButton = null;
-    this.saveButton = null;
     
     // Reset scroll state
     this.scrollY = 0;
@@ -95,6 +105,9 @@ export class Customize extends Scene {
   }
 
   create(): void {
+    // Set camera background to match our gradient theme
+    this.cameras.main.setBackgroundColor(ColorTheme.BACKGROUND_DARK);
+    
     this.refreshLayout();
     
     // Re-calculate positions whenever the game canvas is resized
@@ -113,11 +126,12 @@ export class Customize extends Scene {
     // Resize camera to new viewport
     this.cameras.resize(width, height);
     
-    // Background
+    // Create or update gradient background using common utility
     if (!this.background) {
-      this.background = this.add.image(0, 0, 'background').setOrigin(0);
+      this.background = ColorTheme.createMenuGradientBackground(this, width, height);
+    } else {
+      ColorTheme.updateMenuGradientBackground(this.background, width, height);
     }
-    this.background.setDisplaySize(width, height);
     
     // Create layout containers if they don't exist
     if (!this.headerContainer) {
@@ -139,11 +153,58 @@ export class Customize extends Scene {
     // Create header container for title
     this.headerContainer = this.add.container(0, 0);
     
-    // Create scrollable content container
+    // Create scrollable content container (transparent)
     this.scrollContainer = this.add.container(0, 0);
+    this.scrollContainer.setAlpha(1.0); // Ensure container is fully visible but transparent background
     
     // Create footer container for navigation buttons
     this.footerContainer = this.add.container(0, 0);
+    
+    // Create backgrounds and masking
+    this.createBackgroundsAndMask();
+  }
+
+  private createBackgroundsAndMask(): void {
+    const { width, height } = this.scale;
+    
+    // Define layout areas
+    const headerHeight = Math.max(80, height * 0.12);
+    const footerHeight = Math.max(120, height * 0.18);
+    this.scrollAreaHeight = height - headerHeight - footerHeight;
+    
+    // Create header background with semi-transparent overlay
+    this.headerBackground = this.add.rectangle(
+      width / 2, 
+      headerHeight / 2, 
+      width, 
+      headerHeight, 
+      ColorTheme.SECONDARY_DARK
+    );
+    this.headerBackground.setAlpha(0.95); // Semi-transparent for depth
+    this.headerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+    this.headerBackground.setDepth(10); // Above scroll content
+    
+    // Create footer background with semi-transparent overlay
+    this.footerBackground = this.add.rectangle(
+      width / 2, 
+      height - footerHeight / 2, 
+      width, 
+      footerHeight, 
+      ColorTheme.SECONDARY_DARK
+    );
+    this.footerBackground.setAlpha(0.95); // Semi-transparent for depth
+    this.footerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+    this.footerBackground.setDepth(10); // Above scroll content
+    
+    // Create scroll area mask to hide content outside bounds
+    this.scrollMask = this.add.graphics();
+    this.scrollMask.fillStyle(0x000000, 0); // Transparent mask
+    this.scrollMask.fillRect(0, headerHeight, width, this.scrollAreaHeight);
+    
+    // Apply mask to scroll container
+    if (this.scrollContainer) {
+      this.scrollContainer.setMask(this.scrollMask.createGeometryMask());
+    }
   }
 
   private updateLayout(): void {
@@ -155,17 +216,38 @@ export class Customize extends Scene {
     const footerHeight = Math.max(120, height * 0.18);
     this.scrollAreaHeight = height - headerHeight - footerHeight;
     
+    // Update background elements
+    if (this.headerBackground) {
+      this.headerBackground.setPosition(width / 2, headerHeight / 2);
+      this.headerBackground.setSize(width, headerHeight);
+    }
+    
+    if (this.footerBackground) {
+      this.footerBackground.setPosition(width / 2, height - footerHeight / 2);
+      this.footerBackground.setSize(width, footerHeight);
+    }
+    
+    // Update scroll mask
+    if (this.scrollMask) {
+      this.scrollMask.clear();
+      this.scrollMask.fillStyle(0x000000, 0); // Transparent mask
+      this.scrollMask.fillRect(0, headerHeight, width, this.scrollAreaHeight);
+    }
+    
     // Position containers
     if (this.headerContainer) {
       this.headerContainer.setPosition(0, 0);
+      this.headerContainer.setDepth(15); // Above backgrounds
     }
     
     if (this.scrollContainer) {
       this.scrollContainer.setPosition(0, headerHeight);
+      this.scrollContainer.setDepth(5); // Below backgrounds
     }
     
     if (this.footerContainer) {
       this.footerContainer.setPosition(0, height - footerHeight);
+      this.footerContainer.setDepth(15); // Above backgrounds
     }
     
     // Create or update title in header
@@ -174,6 +256,7 @@ export class Customize extends Scene {
         ...ColorTheme.getTextStyle('xlarge'),
         align: 'center',
       }).setOrigin(0.5);
+      this.title.setDepth(20); // Above everything
       this.headerContainer?.add(this.title);
     } else {
       this.title.setPosition(width / 2, headerHeight / 2);
@@ -212,15 +295,38 @@ export class Customize extends Scene {
   private scroll(deltaY: number): void {
     if (this.contentHeight <= this.scrollAreaHeight) return;
     
+    // Calculate new scroll position with clamping
+    const oldScrollY = this.scrollY;
     this.scrollY = Math.max(0, Math.min(this.maxScrollY, this.scrollY + deltaY));
     
-    if (this.scrollContainer) {
-      this.scrollContainer.setY(this.scrollContainer.y - deltaY);
+    // Only move the container by the actual scroll amount (clamped)
+    const actualDelta = this.scrollY - oldScrollY;
+    
+    if (this.scrollContainer && actualDelta !== 0) {
+      // Calculate the correct container position based on scroll offset
+      const { height } = this.scale;
+      const headerHeight = Math.max(80, height * 0.12);
+      const baseY = headerHeight;
+      
+      this.scrollContainer.setY(baseY - this.scrollY);
     }
   }
 
   private updateScrollBounds(): void {
+    // Calculate maximum scroll distance
+    // Content can scroll until the bottom of content aligns with bottom of scroll area
     this.maxScrollY = Math.max(0, this.contentHeight - this.scrollAreaHeight);
+    
+    // Ensure current scroll position is within new bounds
+    this.scrollY = Math.max(0, Math.min(this.maxScrollY, this.scrollY));
+    
+    // Update container position to match clamped scroll position
+    if (this.scrollContainer) {
+      const { height } = this.scale;
+      const headerHeight = Math.max(80, height * 0.12);
+      const baseY = headerHeight;
+      this.scrollContainer.setY(baseY - this.scrollY);
+    }
   }
 
   private setupKeyboardNavigation(): void {
@@ -232,14 +338,12 @@ export class Customize extends Scene {
     if (this.keyboardEnabled) {
       // Keyboard shortcuts for navigation
       const escKey = this.input.keyboard.addKey('ESC');
-      const enterKey = this.input.keyboard.addKey('ENTER');
       const upKey = this.input.keyboard.addKey('UP');
       const downKey = this.input.keyboard.addKey('DOWN');
       const leftKey = this.input.keyboard.addKey('LEFT');
       const rightKey = this.input.keyboard.addKey('RIGHT');
       
       escKey.on('down', () => this.handleBackButton());
-      enterKey.on('down', () => this.handleSaveButton());
       upKey.on('down', () => this.scroll(-50));
       downKey.on('down', () => this.scroll(50));
       leftKey.on('down', () => this.cyclePrevious());
@@ -270,6 +374,9 @@ export class Customize extends Scene {
     this.contentHeight = currentY;
     this.updateScrollBounds();
     
+    // Initialize scroll position to top
+    this.scrollToTop();
+    
     // Create navigation buttons in footer
     this.createNavigationButtons();
     
@@ -281,8 +388,9 @@ export class Customize extends Scene {
     const { width } = this.scale;
     const scaleFactor = Math.min(width / 1024, this.scale.height / 768);
     
-    // Create container for the entire carousel
+    // Create container for the entire carousel (transparent)
     const container = this.add.container(0, yPosition);
+    container.setAlpha(1.0); // Fully visible but no background
     this.scrollContainer?.add(container);
     
     // Create title
@@ -310,7 +418,7 @@ export class Customize extends Scene {
     const arrowY = 100; // Same Y as image
     const arrowSpacing = Math.max(120, width * 0.25);
     
-    // Create left arrow
+    // Create left arrow with transparent background
     const leftArrow = new MenuButton(
       this,
       width / 2 - arrowSpacing,
@@ -320,12 +428,17 @@ export class Customize extends Scene {
       {
         ...ColorTheme.getButtonStyle('primary'),
         width: arrowSize,
-        height: arrowSize
+        height: arrowSize,
+        backgroundColor: ColorTheme.SECONDARY_DARK,
+        hoverBackgroundColor: ColorTheme.SECONDARY_MEDIUM,
+        borderColor: ColorTheme.BORDER_PRIMARY,
+        borderWidth: 2
       }
     );
+    leftArrow.getContainer().setAlpha(0.8); // Make semi-transparent
     container.add(leftArrow.getContainer());
     
-    // Create right arrow
+    // Create right arrow with transparent background
     const rightArrow = new MenuButton(
       this,
       width / 2 + arrowSpacing,
@@ -335,9 +448,14 @@ export class Customize extends Scene {
       {
         ...ColorTheme.getButtonStyle('primary'),
         width: arrowSize,
-        height: arrowSize
+        height: arrowSize,
+        backgroundColor: ColorTheme.SECONDARY_DARK,
+        hoverBackgroundColor: ColorTheme.SECONDARY_MEDIUM,
+        borderColor: ColorTheme.BORDER_PRIMARY,
+        borderWidth: 2
       }
     );
+    rightArrow.getContainer().setAlpha(0.8); // Make semi-transparent
     container.add(rightArrow.getContainer());
     
     return {
@@ -416,6 +534,25 @@ export class Customize extends Scene {
     StorageUtils.saveCustomization(this.currentCustomization);
   }
 
+  // Scroll position helpers
+  private scrollToTop(): void {
+    this.scrollY = 0;
+    if (this.scrollContainer) {
+      const { height } = this.scale;
+      const headerHeight = Math.max(80, height * 0.12);
+      this.scrollContainer.setY(headerHeight);
+    }
+  }
+
+  private scrollToBottom(): void {
+    this.scrollY = this.maxScrollY;
+    if (this.scrollContainer) {
+      const { height } = this.scale;
+      const headerHeight = Math.max(80, height * 0.12);
+      this.scrollContainer.setY(headerHeight - this.scrollY);
+    }
+  }
+
   // Keyboard navigation helpers
   private cyclePrevious(): void {
     // Cycle through the first carousel for now (could be enhanced for focus management)
@@ -437,19 +574,16 @@ export class Customize extends Scene {
     
     const buttonWidth = Math.min(180, width * 0.4);
     const buttonHeight = Math.max(50, Math.floor(60 * scaleFactor));
-    const spacing = 20;
     const footerHeight = Math.max(120, this.scale.height * 0.18);
     
-    // Position buttons in footer - always horizontal layout in footer
-    const backX = width / 2 - buttonWidth / 2 - spacing / 2;
-    const saveX = width / 2 + buttonWidth / 2 + spacing / 2;
+    // Center the single back button in footer
     const buttonY = footerHeight / 2;
     
     this.backButton = new MenuButton(
       this,
-      backX,
+      width / 2, // Centered horizontally
       buttonY,
-      this.keyboardEnabled ? 'BACK (ESC)' : 'BACK',
+      'BACK',
       () => this.handleBackButton(),
       {
         ...ColorTheme.getButtonStyle('secondary'),
@@ -458,21 +592,8 @@ export class Customize extends Scene {
       }
     );
     
-    this.saveButton = new MenuButton(
-      this,
-      saveX,
-      buttonY,
-      this.keyboardEnabled ? 'SAVE (ENTER)' : 'SAVE',
-      () => this.handleSaveButton(),
-      {
-        ...ColorTheme.getButtonStyle('warning'),
-        width: buttonWidth,
-        height: buttonHeight
-      }
-    );
-    
-    // Add buttons to footer container
-    this.footerContainer?.add([this.backButton.getContainer(), this.saveButton.getContainer()]);
+    // Add button to footer container
+    this.footerContainer?.add(this.backButton.getContainer());
   }
 
   private layoutCustomizationUI(): void {
@@ -488,11 +609,7 @@ export class Customize extends Scene {
     this.scene.start('MainMenu');
   }
 
-  private handleSaveButton(): void {
-    // Save customization and return to main menu
-    StorageUtils.saveCustomization(this.currentCustomization);
-    this.scene.start('MainMenu');
-  }
+
 
   /**
    * Animates UI elements entrance for visual polish
@@ -526,21 +643,19 @@ export class Customize extends Scene {
       });
     });
 
-    // Animate navigation buttons
-    [this.backButton, this.saveButton].forEach((button, index) => {
-      if (button) {
-        const container = button.getContainer();
-        container.setAlpha(0);
-        container.setY(container.y + 30);
-        this.tweens.add({
-          targets: container,
-          alpha: 1,
-          y: container.y - 30,
-          duration: 500,
-          delay: 800 + index * 100,
-          ease: 'Back.easeOut'
-        });
-      }
-    });
+    // Animate navigation button
+    if (this.backButton) {
+      const container = this.backButton.getContainer();
+      container.setAlpha(0);
+      container.setY(container.y + 30);
+      this.tweens.add({
+        targets: container,
+        alpha: 1,
+        y: container.y - 30,
+        duration: 500,
+        delay: 800,
+        ease: 'Back.easeOut'
+      });
+    }
   }
 }

@@ -14,6 +14,7 @@ export class LevelBuilder extends Scene {
   private isDragging: boolean = false;
   private placementMode: 'tile' | 'enemy' | 'spawn' = 'tile';
   private selectedEnemyType: number = 0;
+  private isDialogOpen: boolean = false;
   private levelManager: LevelManager;
   private autosaveTimer: number | null = null;
   private customization: CustomizationData;
@@ -57,7 +58,7 @@ export class LevelBuilder extends Scene {
 
   private renderExistingLevel(): void {
     if (!this.levelData) return;
-    
+
     // Render existing tiles
     for (let y = 0; y < this.levelData.tiles.length; y++) {
       const row = this.levelData.tiles[y];
@@ -68,12 +69,12 @@ export class LevelBuilder extends Scene {
         }
       }
     }
-    
+
     // Render existing enemies
     this.levelData.enemies.forEach(enemy => {
       this.renderEnemyAt(enemy.x, enemy.y, enemy.type);
     });
-    
+
     // Render spawn point
     if (this.levelData.spawn) {
       this.renderSpawnAt(this.levelData.spawn.x, this.levelData.spawn.y);
@@ -153,70 +154,29 @@ export class LevelBuilder extends Scene {
   }
 
   private setupUI(): void {
-    this.createTileToolbar();
-    this.createPlacementModeToolbar();
+    this.createHeader();
     this.createSaveToolbar();
   }
 
-  private createTileToolbar(): void {
-    const toolbar = this.add.container(10, 10);
-    toolbar.setName('toolbar');
-    
-    // Tile type buttons with visual indicators
-    const tileButtons = [
-      { type: TILE_TYPES.EMPTY, color: 0x333333, label: 'Empty' },
-      { type: TILE_TYPES.WALL, color: 0x666666, label: 'Wall' },
-      { type: TILE_TYPES.FLOOR, color: 0x888888, label: 'Floor' },
-      { type: TILE_TYPES.DECORATION, color: 0xAAAAAAA, label: 'Decor' }
-    ];
+  private createHeader(): void {
+    // Create header background
+    const headerHeight = 60;
+    const headerBackground = this.add.rectangle(
+      this.cameras.main.centerX,
+      headerHeight / 2,
+      this.cameras.main.width,
+      headerHeight,
+      ColorTheme.BACKGROUND_OVERLAY,
+      0.9
+    );
+    headerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+    headerBackground.setScrollFactor(0);
+    headerBackground.setDepth(1000);
 
-    tileButtons.forEach((buttonData, index) => {
-      const x = index * 80;
-      
-      // Button background
-      const button = this.add.rectangle(x, 0, 70, 50, buttonData.color)
-        .setInteractive()
-        .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-      
-      // Button label
-      const label = this.add.text(x, 25, buttonData.label, {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
-      }).setOrigin(0.5);
+    // Create header container centered at top
+    const header = this.add.container(this.cameras.main.centerX, headerHeight / 2);
+    header.setName('header');
 
-      // Click handler
-      button.on('pointerdown', () => {
-        this.selectedTileType = buttonData.type;
-        this.updateToolbarSelection();
-      });
-
-      // Hover effects
-      button.on('pointerover', () => button.setStrokeStyle(3, ColorTheme.SUCCESS));
-      button.on('pointerout', () => {
-        const isSelected = this.selectedTileType === buttonData.type;
-        button.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
-      });
-
-      toolbar.add([button, label]);
-    });
-
-    // Instructions text
-    const instructions = this.add.text(10, 70, 'WASD: Move Camera | Mouse: Place Tiles | Scroll: Zoom', {
-      ...ColorTheme.getTextStyle('small', 'secondary'),
-      fontSize: '14px'
-    });
-
-    toolbar.add(instructions);
-    toolbar.setScrollFactor(0);
-    
-    // Initial selection highlight
-    this.updateToolbarSelection();
-  }
-
-  private createPlacementModeToolbar(): void {
-    const modeToolbar = this.add.container(10, 120);
-    modeToolbar.setName('modeToolbar');
-    
     // Mode selection buttons
     const modes = [
       { mode: 'tile', color: 0x4444AA, label: 'Tiles' },
@@ -225,15 +185,16 @@ export class LevelBuilder extends Scene {
     ];
 
     modes.forEach((modeData, index) => {
-      const x = index * 90;
-      
-      const button = this.add.rectangle(x, 0, 80, 40, modeData.color)
+      const x = (index - 1) * 100; // Center the buttons: -100, 0, 100
+
+      const button = this.add.rectangle(x, 0, 90, 40, modeData.color)
         .setInteractive()
-        .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-      
+        .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
+        .setName(`header_${modeData.mode}_button`);
+
       const label = this.add.text(x, 0, modeData.label, {
         ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
+        fontSize: '14px'
       }).setOrigin(0.5);
 
       button.on('pointerdown', () => {
@@ -247,13 +208,13 @@ export class LevelBuilder extends Scene {
         button.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
       });
 
-      modeToolbar.add([button, label]);
+      header.add([button, label]);
     });
 
-    // Enemy type selector (only visible in enemy mode)
-    const enemyTypeToolbar = this.add.container(10, 170);
+    // Enemy type selector (positioned below header, only visible in enemy mode)
+    const enemyTypeToolbar = this.add.container(this.cameras.main.centerX, headerHeight + 30);
     enemyTypeToolbar.setName('enemyTypeToolbar');
-    
+
     const enemyTypes = [
       { type: ENEMY_TYPES.BASIC, color: 0xFF6666, label: 'Basic' },
       { type: ENEMY_TYPES.FAST, color: 0x66FF66, label: 'Fast' },
@@ -261,15 +222,16 @@ export class LevelBuilder extends Scene {
     ];
 
     enemyTypes.forEach((enemyData, index) => {
-      const x = index * 70;
-      
-      const button = this.add.rectangle(x, 0, 60, 30, enemyData.color)
+      const x = (index - 1) * 80; // Center the buttons: -80, 0, 80
+
+      const button = this.add.rectangle(x, 0, 70, 30, enemyData.color)
         .setInteractive()
-        .setStrokeStyle(1, ColorTheme.BORDER_PRIMARY);
-      
+        .setStrokeStyle(1, ColorTheme.BORDER_PRIMARY)
+        .setName(`enemy_${enemyData.label.toLowerCase()}_button`);
+
       const label = this.add.text(x, 0, enemyData.label, {
         ...ColorTheme.getTextStyle('small'),
-        fontSize: '10px'
+        fontSize: '12px'
       }).setOrigin(0.5);
 
       button.on('pointerdown', () => {
@@ -280,36 +242,69 @@ export class LevelBuilder extends Scene {
       enemyTypeToolbar.add([button, label]);
     });
 
-    modeToolbar.setScrollFactor(0);
+    // Instructions text positioned below header
+    const instructions = this.add.text(20, headerHeight + 20, 'WASD: Move Camera\nClick: Place Tiles\nScroll: Zoom', {
+      ...ColorTheme.getTextStyle('small', 'secondary'),
+      fontSize: '12px'
+    });
+    instructions.setScrollFactor(0);
+    instructions.setDepth(1001);
+
+    header.setScrollFactor(0);
+    header.setDepth(1001);
     enemyTypeToolbar.setScrollFactor(0);
-    
+    enemyTypeToolbar.setDepth(1001);
+
+    // Ensure all buttons in header have higher depth
+    header.list.forEach(child => {
+      if (child.setDepth) {
+        child.setDepth(1002);
+      }
+    });
+
+    // Ensure all buttons in enemy toolbar have higher depth
+    enemyTypeToolbar.list.forEach(child => {
+      if (child.setDepth) {
+        child.setDepth(1002);
+      }
+    });
+
     this.updateModeSelection();
     this.updateEnemyTypeSelection();
   }
 
-  private updateToolbarSelection(): void {
-    // Update visual feedback for selected tile type
-    const toolbar = this.children.getByName('toolbar') as Phaser.GameObjects.Container;
-    if (toolbar && toolbar.list) {
-      toolbar.list.forEach((child, index) => {
-        if (child instanceof Phaser.GameObjects.Rectangle && index < 4) {
-          const isSelected = index === this.selectedTileType;
-          child.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
-        }
-      });
-    }
+  private disableSceneInput(): void {
+    console.log('🚫 DISABLING scene input events');
+    // Remove scene-level pointer event listeners
+    this.input.off('pointerdown', this.onPointerDown, this);
+    this.input.off('pointermove', this.onPointerMove, this);
+    this.input.off('pointerup', this.onPointerUp, this);
+
+    // Also reset dragging state to prevent any ongoing drag operations
+    this.isDragging = false;
+  }
+
+  private enableSceneInput(): void {
+    console.log('✅ ENABLING scene input events');
+    // Re-add scene-level pointer event listeners
+    this.input.on('pointerdown', this.onPointerDown, this);
+    this.input.on('pointermove', this.onPointerMove, this);
+    this.input.on('pointerup', this.onPointerUp, this);
   }
 
   private updateModeSelection(): void {
-    const modeToolbar = this.children.getByName('modeToolbar') as Phaser.GameObjects.Container;
+    const header = this.children.getByName('header') as Phaser.GameObjects.Container;
     const enemyTypeToolbar = this.children.getByName('enemyTypeToolbar') as Phaser.GameObjects.Container;
-    
-    if (modeToolbar && modeToolbar.list) {
+
+    if (header && header.list) {
       const modes = ['tile', 'enemy', 'spawn'];
-      modeToolbar.list.forEach((child, index) => {
-        if (child instanceof Phaser.GameObjects.Rectangle && index < 3) {
-          const isSelected = modes[index] === this.placementMode;
-          child.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
+      header.list.forEach((child, index) => {
+        if (child instanceof Phaser.GameObjects.Rectangle && index < 6) { // 6 because we have button + label pairs
+          const modeIndex = Math.floor(index / 2); // Each mode has button + label
+          if (index % 2 === 0) { // Only update buttons (even indices)
+            const isSelected = modes[modeIndex] === this.placementMode;
+            child.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
+          }
         }
       });
     }
@@ -333,14 +328,97 @@ export class LevelBuilder extends Scene {
   }
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
+    console.log('=== POINTER DOWN DEBUG ===');
+    console.log('Pointer position:', { x: pointer.x, y: pointer.y, worldX: pointer.worldX, worldY: pointer.worldY });
+    console.log('Dialog open:', this.isDialogOpen);
+
+    // Don't place tiles if a dialog is open
+    if (this.isDialogOpen) {
+      console.log('❌ Blocked: Dialog is open');
+      return;
+    }
+
+    // Check if we're clicking on an interactive UI element first
+    const hitObjects = this.input.hitTestPointer(pointer);
+    console.log('Hit objects count:', hitObjects.length);
+    console.log('Hit objects:', hitObjects.map(obj => ({
+      name: obj.name,
+      type: obj.type,
+      parentContainer: obj.parentContainer?.name,
+      interactive: obj.input?.enabled
+    })));
+
+    const isClickingUIButton = hitObjects.some(obj => {
+      // Check if it's a named button
+      if (obj.name && obj.name.includes('button')) {
+        console.log('✅ Found UI button by name:', obj.name);
+        return true;
+      }
+      // Check if it's in a UI container
+      if (obj.parentContainer) {
+        const containerName = obj.parentContainer.name;
+        const isUIContainer = containerName === 'header' || containerName === 'footer' || containerName === 'enemyTypeToolbar';
+        if (isUIContainer) {
+          console.log('✅ Found UI element in container:', containerName);
+        }
+        return isUIContainer;
+      }
+      return false;
+    });
+
+    console.log('Is clicking UI button:', isClickingUIButton);
+
+    // Check UI area
+    const inUIArea = this.isPointerInUIArea(pointer);
+    console.log('In UI area:', inUIArea);
+
+    // Don't place tiles if clicking on UI buttons or UI areas
+    if (isClickingUIButton || inUIArea) {
+      console.log('❌ Blocked: Clicking on UI element');
+      return;
+    }
+
+    console.log('✅ Proceeding with tile placement');
     this.isDragging = true;
     this.handlePlacement(pointer.worldX, pointer.worldY);
   }
 
   private onPointerMove(pointer: Phaser.Input.Pointer): void {
-    if (this.isDragging && this.placementMode === 'tile') {
+    if (this.isDragging && this.placementMode === 'tile' && !this.isDialogOpen && !this.isPointerInUIArea(pointer)) {
       this.handlePlacement(pointer.worldX, pointer.worldY);
     }
+  }
+
+  private isPointerInUIArea(pointer: Phaser.Input.Pointer): boolean {
+    const headerHeight = 60;
+    const footerHeight = 60;
+    const footerY = this.cameras.main.height - footerHeight;
+
+    console.log('--- UI Area Check ---');
+    console.log('Header height:', headerHeight, 'Footer Y:', footerY, 'Camera height:', this.cameras.main.height);
+    console.log('Pointer Y:', pointer.y);
+
+    // Check if pointer is in header area
+    if (pointer.y <= headerHeight) {
+      console.log('✅ In header area');
+      return true;
+    }
+
+    // Check if pointer is in footer area
+    if (pointer.y >= footerY) {
+      console.log('✅ In footer area');
+      return true;
+    }
+
+    // Check if pointer is in enemy type selector area (when visible)
+    const enemyTypeToolbar = this.children.getByName('enemyTypeToolbar') as Phaser.GameObjects.Container;
+    if (enemyTypeToolbar && enemyTypeToolbar.visible && pointer.y <= headerHeight + 60) {
+      console.log('✅ In enemy type selector area');
+      return true;
+    }
+
+    console.log('❌ Not in any UI area');
+    return false;
   }
 
   private onPointerUp(): void {
@@ -348,6 +426,7 @@ export class LevelBuilder extends Scene {
   }
 
   private handlePlacement(worldX: number, worldY: number): void {
+    console.log('🎯 PLACING:', this.placementMode, 'at world position:', { worldX, worldY });
     switch (this.placementMode) {
       case 'tile':
         this.placeTile(worldX, worldY);
@@ -363,9 +442,9 @@ export class LevelBuilder extends Scene {
 
   private placeTile(worldX: number, worldY: number): void {
     if (!this.levelData) return;
-    
+
     const gridPos = GridUtils.worldToGrid(worldX, worldY);
-    
+
     if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
       const row = this.levelData.tiles[gridPos.y];
       if (row && row[gridPos.x] !== this.selectedTileType) {
@@ -378,14 +457,14 @@ export class LevelBuilder extends Scene {
 
   private renderTileAt(gridX: number, gridY: number): void {
     if (!this.levelData) return;
-    
+
     const worldPos = GridUtils.gridToWorld(gridX, gridY);
     const row = this.levelData.tiles[gridY];
     if (!row) return;
-    
+
     const tileType = row[gridX];
     const tileKey = `tile_${gridX}_${gridY}`;
-    
+
     // Remove existing tile at this position
     const existingTile = this.children.getByName(tileKey);
     if (existingTile) {
@@ -403,7 +482,7 @@ export class LevelBuilder extends Scene {
 
   private createTileSprite(tileType: number, x: number, y: number, gridX: number, gridY: number): Phaser.GameObjects.Image | null {
     let spriteKey: string;
-    
+
     switch (tileType) {
       case TILE_TYPES.WALL: // WALL - use dirt tiles
         spriteKey = `tile-dirt${((gridX + gridY) % 9) + 1}`; // Deterministic pattern
@@ -412,36 +491,44 @@ export class LevelBuilder extends Scene {
         spriteKey = `tile-grass${((gridX + gridY) % 9) + 1}`; // Deterministic pattern
         break;
       case TILE_TYPES.DECORATION: // DECORATION - use alternating dirt/grass
-        spriteKey = (gridX + gridY) % 2 === 0 ? 
-          `tile-dirt${((gridX + gridY) % 9) + 1}` : 
+        spriteKey = (gridX + gridY) % 2 === 0 ?
+          `tile-dirt${((gridX + gridY) % 9) + 1}` :
           `tile-grass${((gridX + gridY) % 9) + 1}`;
         break;
       default:
         return null;
     }
-    
-    const tileSprite = this.add.image(x + GRID_SIZE/2, y + GRID_SIZE/2, spriteKey);
+
+    const tileSprite = this.add.image(x + GRID_SIZE / 2, y + GRID_SIZE / 2, spriteKey);
     tileSprite.setDisplaySize(GRID_SIZE, GRID_SIZE);
-    
+    tileSprite.setDepth(0); // Tiles render behind UI elements
+
     // Add visual distinction for different tile types in builder
     if (tileType === TILE_TYPES.DECORATION) {
       tileSprite.setTint(0xCCCCCC); // Slightly lighter tint for decoration tiles
     }
-    
+
     return tileSprite;
   }
 
   private placeEnemy(worldX: number, worldY: number): void {
     if (!this.levelData) return;
-    
+
     const gridPos = GridUtils.worldToGrid(worldX, worldY);
-    
+
     if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
+      // Check if there's a tile at this position (enemies can only be placed on tiles)
+      const tileType = this.levelData.tiles[gridPos.y]?.[gridPos.x];
+      if (tileType === undefined || tileType === TILE_TYPES.EMPTY) {
+        this.showMessage('Enemies can only be placed on tiles', 0xAA4444, 2000);
+        return;
+      }
+
       // Check if enemy already exists at this position
       const existingEnemyIndex = this.levelData.enemies.findIndex(
         enemy => enemy.x === gridPos.x && enemy.y === gridPos.y
       );
-      
+
       if (existingEnemyIndex >= 0) {
         // Remove existing enemy
         this.levelData.enemies.splice(existingEnemyIndex, 1);
@@ -461,13 +548,20 @@ export class LevelBuilder extends Scene {
 
   private placeSpawn(worldX: number, worldY: number): void {
     if (!this.levelData) return;
-    
+
     const gridPos = GridUtils.worldToGrid(worldX, worldY);
-    
+
     if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
+      // Check if there's a tile at this position (spawn can only be placed on tiles)
+      const tileType = this.levelData.tiles[gridPos.y]?.[gridPos.x];
+      if (tileType === undefined || tileType === TILE_TYPES.EMPTY) {
+        this.showMessage('Spawn point can only be placed on tiles', 0xAA4444, 2000);
+        return;
+      }
+
       // Remove previous spawn point visual
       this.removeSpawnVisual();
-      
+
       // Update spawn position (only one spawn point allowed)
       this.levelData.spawn = { x: gridPos.x, y: gridPos.y };
       this.renderSpawnAt(gridPos.x, gridPos.y);
@@ -478,12 +572,12 @@ export class LevelBuilder extends Scene {
   private renderEnemyAt(gridX: number, gridY: number, enemyType: number): void {
     const worldPos = GridUtils.gridToWorldCenter(gridX, gridY);
     const enemyKey = `enemy_${gridX}_${gridY}`;
-    
+
     // Enemy sprite and properties based on type
     let spriteKey: string;
     let scale: number;
     let tint: number;
-    
+
     switch (enemyType) {
       case ENEMY_TYPES.FAST:
         spriteKey = 'enemy-bug2';
@@ -502,12 +596,13 @@ export class LevelBuilder extends Scene {
         tint = 0xff0000;
         break;
     }
-    
+
     const enemy = this.add.image(worldPos.x, worldPos.y, spriteKey);
     enemy.setScale(scale);
     enemy.setTint(tint);
     enemy.setName(enemyKey);
-    
+    enemy.setDepth(10); // Enemies render above tiles but below UI
+
     // Add type indicator
     const typeText = this.add.text(worldPos.x, worldPos.y + 20, enemyType.toString(), {
       ...ColorTheme.getTextStyle('small'),
@@ -516,12 +611,13 @@ export class LevelBuilder extends Scene {
       padding: { x: 2, y: 1 }
     }).setOrigin(0.5);
     typeText.setName(`${enemyKey}_text`);
+    typeText.setDepth(10);
   }
 
   private renderSpawnAt(gridX: number, gridY: number): void {
     const worldPos = GridUtils.gridToWorldCenter(gridX, gridY);
     const spawnKey = 'spawn_point';
-    
+
     // Use player sprite as spawn indicator based on customization
     const avatarSprite = `player-${this.customization.avatar}`;
     const spawn = this.add.image(worldPos.x, worldPos.y, avatarSprite);
@@ -529,7 +625,8 @@ export class LevelBuilder extends Scene {
     spawn.setTint(0x44AA44);
     spawn.setAlpha(0.8);
     spawn.setName(spawnKey);
-    
+    spawn.setDepth(10); // Spawn point renders above tiles but below UI
+
     const spawnText = this.add.text(worldPos.x, worldPos.y + 25, 'SPAWN', {
       ...ColorTheme.getTextStyle('small'),
       fontSize: '8px',
@@ -537,13 +634,14 @@ export class LevelBuilder extends Scene {
       padding: { x: 3, y: 1 }
     }).setOrigin(0.5);
     spawnText.setName(`${spawnKey}_text`);
+    spawnText.setDepth(10);
   }
 
   private removeEnemyVisual(gridX: number, gridY: number): void {
     const enemyKey = `enemy_${gridX}_${gridY}`;
     const enemy = this.children.getByName(enemyKey);
     const enemyText = this.children.getByName(`${enemyKey}_text`);
-    
+
     if (enemy) enemy.destroy();
     if (enemyText) enemyText.destroy();
   }
@@ -551,63 +649,54 @@ export class LevelBuilder extends Scene {
   private removeSpawnVisual(): void {
     const spawn = this.children.getByName('spawn_point');
     const spawnText = this.children.getByName('spawn_point_text');
-    
+
     if (spawn) spawn.destroy();
     if (spawnText) spawnText.destroy();
   }
 
   private createSaveToolbar(): void {
-    const saveToolbar = this.add.container(10, 220);
-    saveToolbar.setName('saveToolbar');
-    
-    // Test Level button
-    const testButton = this.add.rectangle(0, 0, 100, 40, ColorTheme.BUTTON_WARNING)
+    // Create footer background
+    const footerHeight = 60;
+    const footerY = this.cameras.main.height - footerHeight;
+
+    const footerBackground = this.add.rectangle(
+      this.cameras.main.centerX,
+      footerY + footerHeight / 2,
+      this.cameras.main.width,
+      footerHeight,
+      ColorTheme.BACKGROUND_OVERLAY,
+      0.9
+    );
+    footerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+    footerBackground.setScrollFactor(0);
+    footerBackground.setDepth(1000);
+
+    // Create container centered at bottom
+    const footer = this.add.container(this.cameras.main.centerX, footerY + footerHeight / 2);
+    footer.setName('footer');
+
+    // Post button
+    const postButton = this.add.rectangle(-65, 0, 120, 40, ColorTheme.BUTTON_SUCCESS)
       .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    
-    const testLabel = this.add.text(0, 0, 'Test Level', {
+      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
+      .setName('footer_post_button');
+
+    const postLabel = this.add.text(-65, 0, 'Post', {
       ...ColorTheme.getTextStyle('small'),
       fontSize: '14px'
     }).setOrigin(0.5);
 
-    testButton.on('pointerdown', () => this.testLevel());
-    testButton.on('pointerover', () => testButton.setStrokeStyle(3, ColorTheme.SUCCESS));
-    testButton.on('pointerout', () => testButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
-
-    // Save & Post button
-    const saveButton = this.add.rectangle(110, 0, 120, 40, ColorTheme.BUTTON_SUCCESS)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    
-    const saveLabel = this.add.text(110, 0, 'Save & Post', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px'
-    }).setOrigin(0.5);
-
-    saveButton.on('pointerdown', () => this.saveAndPost());
-    saveButton.on('pointerover', () => saveButton.setStrokeStyle(3, ColorTheme.SUCCESS));
-    saveButton.on('pointerout', () => saveButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
-
-    // Export JSON button
-    const exportButton = this.add.rectangle(240, 0, 100, 40, ColorTheme.BUTTON_PRIMARY)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    
-    const exportLabel = this.add.text(240, 0, 'Export JSON', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px'
-    }).setOrigin(0.5);
-
-    exportButton.on('pointerdown', () => this.exportLevel());
-    exportButton.on('pointerover', () => exportButton.setStrokeStyle(3, ColorTheme.SUCCESS));
-    exportButton.on('pointerout', () => exportButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
+    postButton.on('pointerdown', () => this.saveAndPost());
+    postButton.on('pointerover', () => postButton.setStrokeStyle(3, ColorTheme.SUCCESS));
+    postButton.on('pointerout', () => postButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
 
     // Clear Level button
-    const clearButton = this.add.rectangle(350, 0, 100, 40, ColorTheme.ERROR)
+    const clearButton = this.add.rectangle(65, 0, 120, 40, ColorTheme.ERROR)
       .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    
-    const clearLabel = this.add.text(350, 0, 'Clear Level', {
+      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
+      .setName('footer_clear_button');
+
+    const clearLabel = this.add.text(65, 0, 'Clear Level', {
       ...ColorTheme.getTextStyle('small'),
       fontSize: '14px'
     }).setOrigin(0.5);
@@ -616,15 +705,16 @@ export class LevelBuilder extends Scene {
     clearButton.on('pointerover', () => clearButton.setStrokeStyle(3, ColorTheme.SUCCESS));
     clearButton.on('pointerout', () => clearButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
 
-    saveToolbar.add([testButton, testLabel, saveButton, saveLabel, exportButton, exportLabel, clearButton, clearLabel]);
-    saveToolbar.setScrollFactor(0);
+    footer.add([postButton, postLabel, clearButton, clearLabel]);
+    footer.setScrollFactor(0);
+    footer.setDepth(1001);
 
-    // Status text
-    const statusText = this.add.text(10, 270, 'Autosave: ON | Test Level to play | Save & Post to share on Reddit', {
-      ...ColorTheme.getTextStyle('small', 'secondary'),
-      fontSize: '12px'
+    // Ensure all buttons in footer have higher depth
+    footer.list.forEach(child => {
+      if (child.setDepth) {
+        child.setDepth(1002);
+      }
     });
-    statusText.setScrollFactor(0);
   }
 
   private setupAutosave(): void {
@@ -651,19 +741,19 @@ export class LevelBuilder extends Scene {
 
       // Update level manager with current data
       this.updateLevelManager();
-      
+
       // Show transition message
       this.showMessage('Starting level test...', 0xAA44AA);
-      
+
       // Transition to gameplay scene with current level data
       this.time.delayedCall(500, () => {
-        this.scene.start('GamePlay', { 
-          levelData: this.levelData, 
-          isTestMode: true, 
-          customization: this.customization 
+        this.scene.start('GamePlay', {
+          levelData: this.levelData,
+          isTestMode: true,
+          customization: this.customization
         });
       });
-      
+
     } catch (error) {
       console.error('Failed to test level:', error);
       this.showMessage('Failed to start level test', 0xAA4444);
@@ -680,40 +770,45 @@ export class LevelBuilder extends Scene {
       return { isValid: false, message: 'Player spawn point is required' };
     }
 
+    // Check if there's at least 1 enemy
+    if (this.levelData.enemies.length === 0) {
+      return { isValid: false, message: 'Level must have at least 1 enemy' };
+    }
+
     // Check if spawn point is within level bounds
     const levelHeight = this.levelData.tiles.length;
     const levelWidth = this.levelData.tiles[0]?.length || 0;
-    
+
     if (this.levelData.spawn.x < 0 || this.levelData.spawn.x >= levelWidth ||
-        this.levelData.spawn.y < 0 || this.levelData.spawn.y >= levelHeight) {
+      this.levelData.spawn.y < 0 || this.levelData.spawn.y >= levelHeight) {
       return { isValid: false, message: 'Spawn point is outside level bounds' };
     }
 
-    // Check if spawn point is on a walkable tile (not a wall)
+    // Check if spawn point is on a tile (not empty)
     const spawnTile = this.levelData.tiles[this.levelData.spawn.y]?.[this.levelData.spawn.x];
-    if (spawnTile === TILE_TYPES.WALL) {
-      return { isValid: false, message: 'Spawn point cannot be on a wall tile' };
+    if (spawnTile === undefined || spawnTile === TILE_TYPES.EMPTY) {
+      return { isValid: false, message: 'Spawn point must be placed on a tile' };
     }
 
     // Validate level has some content (not completely empty)
-    const hasNonEmptyTiles = this.levelData.tiles.some(row => 
+    const hasNonEmptyTiles = this.levelData.tiles.some(row =>
       row.some(tile => tile !== TILE_TYPES.EMPTY)
     );
-    
-    if (!hasNonEmptyTiles && this.levelData.enemies.length === 0) {
-      return { isValid: false, message: 'Level must have some tiles or enemies' };
+
+    if (!hasNonEmptyTiles) {
+      return { isValid: false, message: 'Level must have some tiles' };
     }
 
-    // Validate enemy positions are within bounds and not on walls
+    // Validate enemy positions are within bounds and on tiles
     for (const enemy of this.levelData.enemies) {
       if (enemy.x < 0 || enemy.x >= levelWidth ||
-          enemy.y < 0 || enemy.y >= levelHeight) {
+        enemy.y < 0 || enemy.y >= levelHeight) {
         return { isValid: false, message: 'Enemy position is outside level bounds' };
       }
-      
+
       const enemyTile = this.levelData.tiles[enemy.y]?.[enemy.x];
-      if (enemyTile === TILE_TYPES.WALL) {
-        return { isValid: false, message: 'Enemy cannot be placed on a wall tile' };
+      if (enemyTile === undefined || enemyTile === TILE_TYPES.EMPTY) {
+        return { isValid: false, message: 'Enemy must be placed on a tile' };
       }
     }
 
@@ -722,20 +817,20 @@ export class LevelBuilder extends Scene {
       this.levelManager.loadLevel(this.levelData);
       return { isValid: true, message: 'Level is valid' };
     } catch (error) {
-      return { 
-        isValid: false, 
-        message: error instanceof Error ? error.message : 'Level validation failed' 
+      return {
+        isValid: false,
+        message: error instanceof Error ? error.message : 'Level validation failed'
       };
     }
   }
 
   private async saveAndPost(): Promise<void> {
     let progressContainer: Phaser.GameObjects.Container | null = null;
-    
+
     try {
       // Step 1: Validate level
       progressContainer = this.showProgressMessage('Validating level...', 10);
-      
+
       const validationResult = this.validateLevel();
       if (!validationResult.isValid) {
         if (progressContainer) progressContainer.destroy();
@@ -745,54 +840,54 @@ export class LevelBuilder extends Scene {
 
       // Step 2: Get metadata
       this.updateProgressMessage(progressContainer, 'Checking level metadata...', 25);
-      
+
       if (!this.promptForLevelMetadata()) {
         if (progressContainer) progressContainer.destroy();
         return; // User cancelled
       }
-      
+
       // Step 3: Prepare data
       this.updateProgressMessage(progressContainer, 'Preparing level data...', 40);
       this.updateLevelManager();
-      
+
       // Step 4: Create backup
       this.updateProgressMessage(progressContainer, 'Creating backup...', 55);
       StorageUtils.saveToLocalStorage(this.levelData);
-      
+
       // Step 5: Upload to Reddit
       this.updateProgressMessage(progressContainer, 'Uploading to Reddit...', 70);
-      
+
       const result = await this.levelManager.saveLevelToReddit();
-      
+
       // Step 6: Process result
       this.updateProgressMessage(progressContainer, 'Finalizing...', 90);
-      
+
       if (result.success) {
         // Mark as saved
         this.levelManager.markAsSaved();
-        
+
         this.updateProgressMessage(progressContainer, 'Success!', 100);
-        
+
         // Show success feedback
         setTimeout(() => {
           if (progressContainer) progressContainer.destroy();
-          const message = result.postId 
-            ? `Level saved! Post ID: ${result.postId}` 
+          const message = result.postId
+            ? `Level saved! Post ID: ${result.postId}`
             : 'Level saved successfully!';
           this.showMessage(message, 0x44AA44, 4000);
         }, 500);
-        
+
         // Clear local backup since it's now saved to Reddit
         StorageUtils.clearLocalStorage();
       } else {
         if (progressContainer) progressContainer.destroy();
         this.showMessage(`Save failed: ${result.message}`, 0xAA4444, 5000);
       }
-      
+
     } catch (error) {
       console.error('Failed to save level:', error);
       if (progressContainer) progressContainer.destroy();
-      
+
       // Show detailed error message with retry option
       this.showRetryableError('Failed to save level', error instanceof Error ? error.message : 'Unknown error', () => {
         this.saveAndPost();
@@ -865,17 +960,17 @@ export class LevelBuilder extends Scene {
     });
 
     // Hover effects
-    retryButton.on('pointerover', () => retryButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}` 
+    retryButton.on('pointerover', () => retryButton.setStyle({
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
     }));
-    retryButton.on('pointerout', () => retryButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}` 
+    retryButton.on('pointerout', () => retryButton.setStyle({
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`
     }));
-    cancelButton.on('pointerover', () => cancelButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}` 
+    cancelButton.on('pointerover', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
     }));
-    cancelButton.on('pointerout', () => cancelButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}` 
+    cancelButton.on('pointerout', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
     }));
   }
 
@@ -883,7 +978,7 @@ export class LevelBuilder extends Scene {
     // Check if metadata needs updating
     const currentName = this.levelData.metadata.name;
     const currentAuthor = this.levelData.metadata.author;
-    
+
     if (currentName === 'New Level' || !currentName.trim()) {
       const levelName = prompt('Enter level name:', currentName);
       if (!levelName || !levelName.trim()) {
@@ -892,7 +987,7 @@ export class LevelBuilder extends Scene {
       }
       this.levelData.metadata.name = levelName.trim();
     }
-    
+
     if (currentAuthor === 'Player' || !currentAuthor.trim()) {
       const authorName = prompt('Enter your name:', currentAuthor);
       if (!authorName || !authorName.trim()) {
@@ -901,22 +996,22 @@ export class LevelBuilder extends Scene {
       }
       this.levelData.metadata.author = authorName.trim();
     }
-    
+
     return true;
   }
 
   private exportLevel(): void {
     const progressContainer = this.showProgressMessage('Preparing export...', 20);
-    
+
     try {
       this.updateProgressMessage(progressContainer, 'Validating level data...', 40);
       this.updateLevelManager();
-      
+
       this.updateProgressMessage(progressContainer, 'Generating JSON file...', 70);
       StorageUtils.downloadLevelAsFile(this.levelData);
-      
+
       this.updateProgressMessage(progressContainer, 'Export complete!', 100);
-      
+
       setTimeout(() => {
         progressContainer.destroy();
         this.showMessage('Level exported as JSON file', 0x4444AA);
@@ -936,20 +1031,21 @@ export class LevelBuilder extends Scene {
       () => {
         // User confirmed - clear the level
         const progressContainer = this.showProgressMessage('Clearing level...', 25);
-        
+
         try {
           this.updateProgressMessage(progressContainer, 'Removing all tiles and entities...', 50);
           this.levelData = this.levelManager.createNewLevel('New Level', 'Player');
-          
+          this.updateLevelManager(); // Update the level manager with the new empty level
+
           this.updateProgressMessage(progressContainer, 'Updating display...', 75);
           this.clearAllVisuals();
           this.renderExistingLevel();
-          
+
           this.updateProgressMessage(progressContainer, 'Clearing backup...', 90);
           StorageUtils.clearLocalStorage();
-          
+
           this.updateProgressMessage(progressContainer, 'Complete!', 100);
-          
+
           setTimeout(() => {
             progressContainer.destroy();
             this.showMessage('Level cleared successfully', 0xAAAA44);
@@ -964,7 +1060,11 @@ export class LevelBuilder extends Scene {
   }
 
   private showConfirmationDialog(title: string, message: string, onConfirm: () => void): void {
-    // Create overlay
+    // Set dialog flag and disable scene input events
+    this.isDialogOpen = true;
+    this.disableSceneInput();
+
+    // Create overlay that blocks all clicks
     const overlay = this.add.rectangle(
       this.cameras.main.centerX,
       this.cameras.main.centerY,
@@ -972,15 +1072,32 @@ export class LevelBuilder extends Scene {
       this.cameras.main.height,
       0x000000,
       0.7
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000);
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000).setInteractive();
+
+    // Block all pointer events from passing through the overlay
+    overlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Stop the event from propagating to objects behind the overlay
+      pointer.event.stopPropagation();
+    });
+
+    overlay.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      // Stop move events from propagating as well
+      pointer.event.stopPropagation();
+    });
 
     // Dialog container
     const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
     dialogContainer.setScrollFactor(0).setDepth(3001);
 
-    // Dialog background
+    // Dialog background - make interactive to capture clicks
     const background = this.add.rectangle(0, 0, 400, 180, ColorTheme.SECONDARY_DARK, 0.95);
     background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
+    background.setInteractive();
+
+    // Prevent clicks on dialog background from propagating
+    background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+    });
 
     // Title
     const titleText = this.add.text(0, -50, title, {
@@ -1003,7 +1120,7 @@ export class LevelBuilder extends Scene {
       fontSize: '16px',
       backgroundColor: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`,
       padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive();
+    }).setOrigin(0.5).setInteractive().setName('dialog_confirm_button');
 
     // Cancel button
     const cancelButton = this.add.text(60, 40, 'Cancel', {
@@ -1011,47 +1128,74 @@ export class LevelBuilder extends Scene {
       fontSize: '16px',
       backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
       padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive();
+    }).setOrigin(0.5).setInteractive().setName('dialog_cancel_button');
 
     dialogContainer.add([background, titleText, messageText, confirmButton, cancelButton]);
 
     // Button interactions
     confirmButton.on('pointerdown', () => {
+      this.isDialogOpen = false; // Reset dialog flag
       overlay.destroy();
       dialogContainer.destroy();
       onConfirm();
+
+      // Re-enable input after a small delay to prevent the same click from placing tiles
+      this.time.delayedCall(50, () => {
+        this.enableSceneInput();
+      });
     });
 
     cancelButton.on('pointerdown', () => {
+      this.isDialogOpen = false; // Reset dialog flag
       overlay.destroy();
       dialogContainer.destroy();
+
+      // Re-enable input after a small delay to prevent the same click from placing tiles
+      this.time.delayedCall(50, () => {
+        this.enableSceneInput();
+      });
     });
 
     // Hover effects
-    confirmButton.on('pointerover', () => confirmButton.setStyle({ 
-      backgroundColor: `#${(ColorTheme.ERROR | 0x222222).toString(16).padStart(6, '0')}` 
+    confirmButton.on('pointerover', () => confirmButton.setStyle({
+      backgroundColor: `#${(ColorTheme.ERROR | 0x222222).toString(16).padStart(6, '0')}`
     }));
-    confirmButton.on('pointerout', () => confirmButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}` 
+    confirmButton.on('pointerout', () => confirmButton.setStyle({
+      backgroundColor: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`
     }));
-    cancelButton.on('pointerover', () => cancelButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}` 
+    cancelButton.on('pointerover', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
     }));
-    cancelButton.on('pointerout', () => cancelButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}` 
+    cancelButton.on('pointerout', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
     }));
   }
 
   private clearAllVisuals(): void {
-    // Remove all tile visuals
-    this.children.list.forEach(child => {
-      if (child.name && (
-        child.name.startsWith('tile_') || 
-        child.name.startsWith('enemy_') || 
+    // Create a copy of the children list to avoid iteration issues during destruction
+    const childrenToRemove = [...this.children.list].filter(child => {
+      return child.name && (
+        child.name.startsWith('tile_') ||
+        child.name.startsWith('enemy_') ||
         child.name.startsWith('spawn_')
-      )) {
-        child.destroy();
-      }
+      );
+    });
+
+    // Remove all game object visuals
+    childrenToRemove.forEach(child => {
+      child.destroy();
+    });
+
+    // Also clear any remaining enemy text labels
+    const textLabelsToRemove = [...this.children.list].filter(child => {
+      return child.name && (
+        child.name.includes('enemy_') && child.name.includes('_text') ||
+        child.name.includes('spawn_') && child.name.includes('_text')
+      );
+    });
+
+    textLabelsToRemove.forEach(child => {
+      child.destroy();
     });
   }
 
@@ -1120,7 +1264,7 @@ export class LevelBuilder extends Scene {
 
     // Progress bar background
     const progressBg = this.add.rectangle(0, 15, 200, 8, 0x333333);
-    
+
     // Progress bar fill
     const progressFill = this.add.rectangle(-100, 15, progress * 2, 8, 0x4444AA);
     progressFill.setOrigin(0, 0.5);
@@ -1135,7 +1279,7 @@ export class LevelBuilder extends Scene {
   private updateProgressMessage(container: Phaser.GameObjects.Container, text: string, progress: number): void {
     const progressFill = container.getData('progressFill') as Phaser.GameObjects.Rectangle;
     const messageText = container.getData('messageText') as Phaser.GameObjects.Text;
-    
+
     if (progressFill && messageText) {
       messageText.setText(text);
       this.tweens.add({
@@ -1151,7 +1295,7 @@ export class LevelBuilder extends Scene {
     // Store customization data for preview purposes
     // Load from storage if not provided to ensure latest customization is used
     this.customization = data?.customization || StorageUtils.loadCustomization();
-    
+
     // Cleanup previous instance if any
     if (this.autosaveTimer) {
       StorageUtils.clearAutosaveTimer(this.autosaveTimer);
