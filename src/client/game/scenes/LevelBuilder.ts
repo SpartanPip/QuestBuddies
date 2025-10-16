@@ -13,7 +13,7 @@ export class LevelBuilder extends Scene {
   private selectedTileType: number = TILE_TYPES.WALL;
   private isDragging: boolean = false;
   private placementMode: 'tile' | 'enemy' | 'spawn' = 'tile';
-  private selectedEnemyType: number = 0;
+  private selectedEnemyType: number = ENEMY_TYPES.BASIC;
   private isDialogOpen: boolean = false;
   private levelManager: LevelManager;
   private autosaveTimer: number | null = null;
@@ -198,8 +198,14 @@ export class LevelBuilder extends Scene {
       }).setOrigin(0.5);
 
       button.on('pointerdown', () => {
-        this.placementMode = modeData.mode as 'tile' | 'enemy' | 'spawn';
-        this.updateModeSelection();
+        if (modeData.mode === 'tile') {
+          this.showTileSelectionPopup();
+        } else if (modeData.mode === 'enemy') {
+          this.showEnemySelectionPopup();
+        } else {
+          this.placementMode = modeData.mode as 'tile' | 'enemy' | 'spawn';
+          this.updateModeSelection();
+        }
       });
 
       button.on('pointerover', () => button.setStrokeStyle(3, ColorTheme.SUCCESS));
@@ -211,36 +217,7 @@ export class LevelBuilder extends Scene {
       header.add([button, label]);
     });
 
-    // Enemy type selector (positioned below header, only visible in enemy mode)
-    const enemyTypeToolbar = this.add.container(this.cameras.main.centerX, headerHeight + 30);
-    enemyTypeToolbar.setName('enemyTypeToolbar');
 
-    const enemyTypes = [
-      { type: ENEMY_TYPES.BASIC, color: 0xFF6666, label: 'Basic' },
-      { type: ENEMY_TYPES.FAST, color: 0x66FF66, label: 'Fast' },
-      { type: ENEMY_TYPES.HEAVY, color: 0x6666FF, label: 'Heavy' }
-    ];
-
-    enemyTypes.forEach((enemyData, index) => {
-      const x = (index - 1) * 80; // Center the buttons: -80, 0, 80
-
-      const button = this.add.rectangle(x, 0, 70, 30, enemyData.color)
-        .setInteractive()
-        .setStrokeStyle(1, ColorTheme.BORDER_PRIMARY)
-        .setName(`enemy_${enemyData.label.toLowerCase()}_button`);
-
-      const label = this.add.text(x, 0, enemyData.label, {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
-      }).setOrigin(0.5);
-
-      button.on('pointerdown', () => {
-        this.selectedEnemyType = enemyData.type;
-        this.updateEnemyTypeSelection();
-      });
-
-      enemyTypeToolbar.add([button, label]);
-    });
 
     // Instructions text positioned below header
     const instructions = this.add.text(20, headerHeight + 20, 'WASD: Move Camera\nClick: Place Tiles\nScroll: Zoom', {
@@ -252,8 +229,6 @@ export class LevelBuilder extends Scene {
 
     header.setScrollFactor(0);
     header.setDepth(1001);
-    enemyTypeToolbar.setScrollFactor(0);
-    enemyTypeToolbar.setDepth(1001);
 
     // Ensure all buttons in header have higher depth
     header.list.forEach(child => {
@@ -262,15 +237,7 @@ export class LevelBuilder extends Scene {
       }
     });
 
-    // Ensure all buttons in enemy toolbar have higher depth
-    enemyTypeToolbar.list.forEach(child => {
-      if (child.setDepth) {
-        child.setDepth(1002);
-      }
-    });
-
     this.updateModeSelection();
-    this.updateEnemyTypeSelection();
   }
 
   private disableSceneInput(): void {
@@ -294,7 +261,6 @@ export class LevelBuilder extends Scene {
 
   private updateModeSelection(): void {
     const header = this.children.getByName('header') as Phaser.GameObjects.Container;
-    const enemyTypeToolbar = this.children.getByName('enemyTypeToolbar') as Phaser.GameObjects.Container;
 
     if (header && header.list) {
       const modes = ['tile', 'enemy', 'spawn'];
@@ -308,24 +274,9 @@ export class LevelBuilder extends Scene {
         }
       });
     }
-
-    // Show/hide enemy type selector based on mode
-    if (enemyTypeToolbar) {
-      enemyTypeToolbar.setVisible(this.placementMode === 'enemy');
-    }
   }
 
-  private updateEnemyTypeSelection(): void {
-    const enemyTypeToolbar = this.children.getByName('enemyTypeToolbar') as Phaser.GameObjects.Container;
-    if (enemyTypeToolbar && enemyTypeToolbar.list) {
-      enemyTypeToolbar.list.forEach((child, index) => {
-        if (child instanceof Phaser.GameObjects.Rectangle && index < 3) {
-          const isSelected = index === this.selectedEnemyType;
-          child.setStrokeStyle(isSelected ? 2 : 1, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
-        }
-      });
-    }
-  }
+
 
   private onPointerDown(pointer: Phaser.Input.Pointer): void {
     console.log('=== POINTER DOWN DEBUG ===');
@@ -357,7 +308,7 @@ export class LevelBuilder extends Scene {
       // Check if it's in a UI container
       if (obj.parentContainer) {
         const containerName = obj.parentContainer.name;
-        const isUIContainer = containerName === 'header' || containerName === 'footer' || containerName === 'enemyTypeToolbar';
+        const isUIContainer = containerName === 'header' || containerName === 'footer';
         if (isUIContainer) {
           console.log('✅ Found UI element in container:', containerName);
         }
@@ -410,12 +361,7 @@ export class LevelBuilder extends Scene {
       return true;
     }
 
-    // Check if pointer is in enemy type selector area (when visible)
-    const enemyTypeToolbar = this.children.getByName('enemyTypeToolbar') as Phaser.GameObjects.Container;
-    if (enemyTypeToolbar && enemyTypeToolbar.visible && pointer.y <= headerHeight + 60) {
-      console.log('✅ In enemy type selector area');
-      return true;
-    }
+
 
     console.log('❌ Not in any UI area');
     return false;
@@ -602,16 +548,6 @@ export class LevelBuilder extends Scene {
     enemy.setTint(tint);
     enemy.setName(enemyKey);
     enemy.setDepth(10); // Enemies render above tiles but below UI
-
-    // Add type indicator
-    const typeText = this.add.text(worldPos.x, worldPos.y + 20, enemyType.toString(), {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '10px',
-      backgroundColor: `#${ColorTheme.BACKGROUND_OVERLAY.toString(16).padStart(6, '0')}`,
-      padding: { x: 2, y: 1 }
-    }).setOrigin(0.5);
-    typeText.setName(`${enemyKey}_text`);
-    typeText.setDepth(10);
   }
 
   private renderSpawnAt(gridX: number, gridY: number): void {
@@ -640,10 +576,8 @@ export class LevelBuilder extends Scene {
   private removeEnemyVisual(gridX: number, gridY: number): void {
     const enemyKey = `enemy_${gridX}_${gridY}`;
     const enemy = this.children.getByName(enemyKey);
-    const enemyText = this.children.getByName(`${enemyKey}_text`);
 
     if (enemy) enemy.destroy();
-    if (enemyText) enemyText.destroy();
   }
 
   private removeSpawnVisual(): void {
@@ -1059,6 +993,244 @@ export class LevelBuilder extends Scene {
     );
   }
 
+  private showTileSelectionPopup(): void {
+    // Set dialog flag and disable scene input events
+    this.isDialogOpen = true;
+    this.disableSceneInput();
+
+    // Create overlay that blocks all clicks
+    const overlay = this.add.rectangle(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY,
+      this.cameras.main.width,
+      this.cameras.main.height,
+      0x000000,
+      0.7
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000).setInteractive();
+
+    // Block all pointer events from passing through the overlay
+    overlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+    });
+
+    // Dialog container
+    const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
+    dialogContainer.setScrollFactor(0).setDepth(3001);
+
+    // Dialog background
+    const background = this.add.rectangle(0, 0, 500, 400, ColorTheme.SECONDARY_DARK, 0.95);
+    background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
+    background.setInteractive();
+    background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+    });
+
+    // Title
+    const titleText = this.add.text(0, -170, 'Select Tile Type', {
+      ...ColorTheme.getTextStyle('medium'),
+      fontSize: '20px',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    // Tile options grid
+    const tileOptions = [
+      { type: TILE_TYPES.WALL, label: 'Wall', color: 0x666666, sprite: 'tile-dirt1' },
+      { type: TILE_TYPES.FLOOR, label: 'Floor', color: 0x888888, sprite: 'tile-grass1' },
+      { type: TILE_TYPES.DECORATION, label: 'Decoration', color: 0xAAAAAAA, sprite: 'tile-dirt2' }
+    ];
+
+    const gridContainer = this.add.container(0, -50);
+
+    tileOptions.forEach((tileData, index) => {
+      const row = Math.floor(index / 2);
+      const col = index % 2;
+      const x = (col - 0.5) * 120;
+      const y = row * 80;
+
+      // Tile preview background
+      const tileButton = this.add.rectangle(x, y, 100, 70, tileData.color, 0.3);
+      tileButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+      tileButton.setInteractive();
+
+      // Tile sprite preview
+      const tileSprite = this.add.image(x, y - 10, tileData.sprite);
+      tileSprite.setDisplaySize(32, 32);
+
+      // Tile label
+      const tileLabel = this.add.text(x, y + 20, tileData.label, {
+        ...ColorTheme.getTextStyle('small'),
+        fontSize: '12px'
+      }).setOrigin(0.5);
+
+      // Click handler
+      tileButton.on('pointerdown', () => {
+        this.selectedTileType = tileData.type;
+        this.placementMode = 'tile';
+        this.updateModeSelection();
+        this.closeSelectionPopup(overlay, dialogContainer);
+      });
+
+      // Hover effects
+      tileButton.on('pointerover', () => {
+        tileButton.setStrokeStyle(3, ColorTheme.SUCCESS);
+        tileButton.setAlpha(0.8);
+      });
+      tileButton.on('pointerout', () => {
+        tileButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+        tileButton.setAlpha(1);
+      });
+
+      gridContainer.add([tileButton, tileSprite, tileLabel]);
+    });
+
+    // Cancel button
+    const cancelButton = this.add.text(0, 120, 'Cancel', {
+      ...ColorTheme.getTextStyle('small'),
+      fontSize: '16px',
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setInteractive().setName('dialog_cancel_button');
+
+    cancelButton.on('pointerdown', () => {
+      this.closeSelectionPopup(overlay, dialogContainer);
+    });
+
+    // Hover effect for cancel button
+    cancelButton.on('pointerover', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
+    }));
+    cancelButton.on('pointerout', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
+    }));
+
+    dialogContainer.add([background, titleText, gridContainer, cancelButton]);
+  }
+
+  private showEnemySelectionPopup(): void {
+    // Set dialog flag and disable scene input events
+    this.isDialogOpen = true;
+    this.disableSceneInput();
+
+    // Create overlay that blocks all clicks
+    const overlay = this.add.rectangle(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY,
+      this.cameras.main.width,
+      this.cameras.main.height,
+      0x000000,
+      0.7
+    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000).setInteractive();
+
+    // Block all pointer events from passing through the overlay
+    overlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+    });
+
+    // Dialog container
+    const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
+    dialogContainer.setScrollFactor(0).setDepth(3001);
+
+    // Dialog background
+    const background = this.add.rectangle(0, 0, 500, 400, ColorTheme.SECONDARY_DARK, 0.95);
+    background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
+    background.setInteractive();
+    background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      pointer.event.stopPropagation();
+    });
+
+    // Title
+    const titleText = this.add.text(0, -170, 'Select Enemy Type', {
+      ...ColorTheme.getTextStyle('medium'),
+      fontSize: '20px',
+      fontStyle: 'bold'
+    }).setOrigin(0.5);
+
+    // Enemy options grid
+    const enemyOptions = [
+      { type: ENEMY_TYPES.BASIC, label: 'Basic', color: 0xFF6666, sprite: 'enemy-bug1', scale: 0.3, tint: 0xff0000 },
+      { type: ENEMY_TYPES.FAST, label: 'Fast', color: 0x66FF66, sprite: 'enemy-bug2', scale: 0.25, tint: 0xff6600 },
+      { type: ENEMY_TYPES.HEAVY, label: 'Heavy', color: 0x6666FF, sprite: 'enemy-bug3', scale: 0.35, tint: 0x660066 }
+    ];
+
+    const gridContainer = this.add.container(0, -50);
+
+    enemyOptions.forEach((enemyData, index) => {
+      const row = Math.floor(index / 2);
+      const col = index % 2;
+      const x = (col - 0.5) * 120;
+      const y = row * 80;
+
+      // Enemy preview background
+      const enemyButton = this.add.rectangle(x, y, 100, 70, enemyData.color, 0.3);
+      enemyButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+      enemyButton.setInteractive();
+
+      // Enemy sprite preview
+      const enemySprite = this.add.image(x, y - 10, enemyData.sprite);
+      enemySprite.setScale(enemyData.scale);
+      enemySprite.setTint(enemyData.tint);
+
+      // Enemy label
+      const enemyLabel = this.add.text(x, y + 20, enemyData.label, {
+        ...ColorTheme.getTextStyle('small'),
+        fontSize: '12px'
+      }).setOrigin(0.5);
+
+      // Click handler
+      enemyButton.on('pointerdown', () => {
+        this.selectedEnemyType = enemyData.type;
+        this.placementMode = 'enemy';
+        this.updateModeSelection();
+        this.closeSelectionPopup(overlay, dialogContainer);
+      });
+
+      // Hover effects
+      enemyButton.on('pointerover', () => {
+        enemyButton.setStrokeStyle(3, ColorTheme.SUCCESS);
+        enemyButton.setAlpha(0.8);
+      });
+      enemyButton.on('pointerout', () => {
+        enemyButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+        enemyButton.setAlpha(1);
+      });
+
+      gridContainer.add([enemyButton, enemySprite, enemyLabel]);
+    });
+
+    // Cancel button
+    const cancelButton = this.add.text(0, 120, 'Cancel', {
+      ...ColorTheme.getTextStyle('small'),
+      fontSize: '16px',
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
+      padding: { x: 20, y: 10 }
+    }).setOrigin(0.5).setInteractive().setName('dialog_cancel_button');
+
+    cancelButton.on('pointerdown', () => {
+      this.closeSelectionPopup(overlay, dialogContainer);
+    });
+
+    // Hover effect for cancel button
+    cancelButton.on('pointerover', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
+    }));
+    cancelButton.on('pointerout', () => cancelButton.setStyle({
+      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
+    }));
+
+    dialogContainer.add([background, titleText, gridContainer, cancelButton]);
+  }
+
+  private closeSelectionPopup(overlay: Phaser.GameObjects.Rectangle, dialogContainer: Phaser.GameObjects.Container): void {
+    this.isDialogOpen = false;
+    overlay.destroy();
+    dialogContainer.destroy();
+
+    // Re-enable input after a small delay to prevent the same click from placing tiles
+    this.time.delayedCall(50, () => {
+      this.enableSceneInput();
+    });
+  }
+
   private showConfirmationDialog(title: string, message: string, onConfirm: () => void): void {
     // Set dialog flag and disable scene input events
     this.isDialogOpen = true;
@@ -1186,17 +1358,7 @@ export class LevelBuilder extends Scene {
       child.destroy();
     });
 
-    // Also clear any remaining enemy text labels
-    const textLabelsToRemove = [...this.children.list].filter(child => {
-      return child.name && (
-        child.name.includes('enemy_') && child.name.includes('_text') ||
-        child.name.includes('spawn_') && child.name.includes('_text')
-      );
-    });
 
-    textLabelsToRemove.forEach(child => {
-      child.destroy();
-    });
   }
 
   private showMessage(text: string, color: number, duration: number = 3000): void {
