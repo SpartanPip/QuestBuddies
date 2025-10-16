@@ -250,6 +250,7 @@ export class LevelBuilder extends Scene {
 
     // Also reset dragging state to prevent any ongoing drag operations
     this.isDragging = false;
+    this.disableCameraZoom();
   }
 
   private enableSceneInput(): void {
@@ -258,6 +259,21 @@ export class LevelBuilder extends Scene {
     this.input.on('pointerdown', this.onPointerDown, this);
     this.input.on('pointermove', this.onPointerMove, this);
     this.input.on('pointerup', this.onPointerUp, this);
+    this.enableCameraZoom();
+  }
+
+  private disableCameraZoom(): void {
+    // Remove camera zoom wheel event
+    this.input.off('wheel');
+  }
+
+  private enableCameraZoom(): void {
+    // Re-add camera zoom wheel event
+    this.input.on('wheel', (_pointer: any, _gameObjects: any, _deltaX: number, deltaY: number) => {
+      const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Phaser.Math.Clamp(this.camera.zoom * zoomFactor, 0.5, 2);
+      this.camera.setZoom(newZoom);
+    });
   }
 
   private updateModeSelection(): void {
@@ -979,6 +995,7 @@ export class LevelBuilder extends Scene {
     // Set dialog flag and disable scene input events
     this.isDialogOpen = true;
     this.disableSceneInput();
+    this.disableCameraZoom();
 
     // Create overlay that blocks all clicks
     const overlay = this.add.rectangle(
@@ -1038,7 +1055,27 @@ export class LevelBuilder extends Scene {
       { sprite: 'tile-grass9', label: 'Grass Ground 9' }
     ];
 
-    const gridContainer = this.add.container(0, -100);
+    // Create dedicated scroll viewport container
+    const viewportWidth = 480;
+    const viewportHeight = 300;
+    const viewportContainer = this.add.container(0, -50); // Position between title and cancel button
+
+    // Create scroll mask that fills the viewport (transparent)
+    const scrollMask = this.add.graphics();
+    scrollMask.fillStyle(0xffffff, 0); // Transparent fill for masking only
+    scrollMask.fillRect(-viewportWidth / 2, -viewportHeight / 2, viewportWidth, viewportHeight);
+
+    // Scrollable content container that will move when scrolling
+    const scrollableContent = this.add.container(0, 0);
+    scrollableContent.setMask(scrollMask.createGeometryMask());
+
+    // Grid container for all tiles - starts at top of content
+    const gridContainer = this.add.container(0, -viewportHeight / 2 + 40); // 40px padding from top
+
+    // Calculate scroll limits
+    let currentScrollY = 0;
+    const totalContentHeight = Math.ceil(tileOptions.length / 4) * 80 + 80; // Extra padding at bottom
+    const maxScrollY = Math.max(0, totalContentHeight - viewportHeight + 80); // Account for padding
 
     tileOptions.forEach((tileData, index) => {
       const row = Math.floor(index / 4); // 4 columns for better layout
@@ -1082,6 +1119,38 @@ export class LevelBuilder extends Scene {
       gridContainer.add([tileButton, tileSprite, tileLabel]);
     });
 
+    // Build the container hierarchy
+    scrollableContent.add(gridContainer);
+    viewportContainer.add([scrollMask, scrollableContent]);
+
+    // Add scroll functionality
+    const scrollStep = 40;
+
+    // Mouse wheel scrolling
+    overlay.on('wheel', (pointer: any, deltaX: number, deltaY: number) => {
+      if (deltaY > 0 && currentScrollY < maxScrollY) {
+        currentScrollY = Math.min(maxScrollY, currentScrollY + scrollStep);
+      } else if (deltaY < 0 && currentScrollY > 0) {
+        currentScrollY = Math.max(0, currentScrollY - scrollStep);
+      }
+      gridContainer.setY(-viewportHeight / 2 + 40 - currentScrollY);
+    });
+
+    // Add scroll indicators if content is scrollable
+    if (maxScrollY > 0) {
+      const scrollUpIndicator = this.add.text(220, -200, '▲ Scroll Up', {
+        ...ColorTheme.getTextStyle('small'),
+        fontSize: '12px'
+      }).setOrigin(0.5);
+
+      const scrollDownIndicator = this.add.text(220, 100, '▼ Scroll Down', {
+        ...ColorTheme.getTextStyle('small'),
+        fontSize: '12px'
+      }).setOrigin(0.5);
+
+      dialogContainer.add([scrollUpIndicator, scrollDownIndicator]);
+    }
+
     // Cancel button
     const cancelButton = this.add.text(0, 170, 'Cancel', {
       ...ColorTheme.getTextStyle('small'),
@@ -1102,13 +1171,14 @@ export class LevelBuilder extends Scene {
       backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
     }));
 
-    dialogContainer.add([background, titleText, gridContainer, cancelButton]);
+    dialogContainer.add([background, titleText, viewportContainer, cancelButton]);
   }
 
   private showEnemySelectionPopup(): void {
     // Set dialog flag and disable scene input events
     this.isDialogOpen = true;
     this.disableSceneInput();
+    this.disableCameraZoom();
 
     // Create overlay that blocks all clicks
     const overlay = this.add.rectangle(
