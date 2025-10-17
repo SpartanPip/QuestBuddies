@@ -15,6 +15,7 @@ export class LevelManager {
   createNewLevel(name: string = 'Untitled Level', author: string = 'Anonymous'): LevelData {
     const newLevel: LevelData = {
       tiles: this.createEmptyTileGrid(DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE),
+      tileSprites: this.createEmptyTileSpriteGrid(DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE),
       enemies: [],
       spawn: null, // No default spawn position - user must place one
       metadata: {
@@ -117,6 +118,33 @@ export class LevelManager {
       }
     }
 
+    // Validate tileSprites array (optional for backward compatibility)
+    if (data.tileSprites) {
+      if (!Array.isArray(data.tileSprites)) {
+        throw new Error('Level tileSprites must be a 2D array');
+      }
+
+      if (data.tileSprites.length !== data.tiles.length) {
+        throw new Error('tileSprites array must have same number of rows as tiles array');
+      }
+
+      for (let i = 0; i < data.tileSprites.length; i++) {
+        if (!Array.isArray(data.tileSprites[i]) || data.tileSprites[i].length !== rowLength) {
+          throw new Error(`tileSprites row ${i} has invalid length. All rows must have ${rowLength} sprites`);
+        }
+
+        for (let j = 0; j < data.tileSprites[i].length; j++) {
+          const sprite = data.tileSprites[i][j];
+          if (sprite !== null && sprite !== undefined && typeof sprite !== 'string') {
+            throw new Error(`Invalid tile sprite at position (${i}, ${j}): ${sprite}`);
+          }
+        }
+      }
+    } else {
+      // Create empty tileSprites array for backward compatibility
+      data.tileSprites = this.createEmptyTileSpriteGrid(data.tiles.length, rowLength);
+    }
+
     // Validate enemies array
     if (!Array.isArray(data.enemies)) {
       throw new Error('Level enemies must be an array');
@@ -129,8 +157,8 @@ export class LevelManager {
       }
     }
 
-    // Validate spawn point
-    if (!this.isValidPosition(data.spawn)) {
+    // Validate spawn point (allow null during level building)
+    if (!this.isValidPositionOrNull(data.spawn)) {
       throw new Error('Invalid spawn point position');
     }
 
@@ -167,6 +195,13 @@ export class LevelManager {
   }
 
   /**
+   * Validates if a position is valid or null (for optional positions)
+   */
+  private isValidPositionOrNull(pos: any): pos is Position | null {
+    return pos === null || this.isValidPosition(pos);
+  }
+
+  /**
    * Validates if an enemy spawn object is valid
    */
   private isValidEnemySpawn(enemy: any): enemy is EnemySpawn {
@@ -189,6 +224,21 @@ export class LevelManager {
       const row: number[] = [];
       for (let x = 0; x < width; x++) {
         row.push(TILE_TYPES.EMPTY);
+      }
+      grid.push(row);
+    }
+    return grid;
+  }
+
+  /**
+   * Creates an empty tile sprite grid filled with null values
+   */
+  private createEmptyTileSpriteGrid(width: number, height: number): (string | null)[][] {
+    const grid: (string | null)[][] = [];
+    for (let y = 0; y < height; y++) {
+      const row: (string | null)[] = [];
+      for (let x = 0; x < width; x++) {
+        row.push(null);
       }
       grid.push(row);
     }

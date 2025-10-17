@@ -34,8 +34,21 @@ export class GridSelectionScene extends Scene {
     
     this.createBackground();
     this.createScrollableGrid();
+    this.setupInput();
     
     console.log('✅ GridSelectionScene created successfully');
+  }
+
+  private setupInput(): void {
+    // Enable wheel events for the scene
+    this.input.mouse?.disableContextMenu();
+    
+    // Make sure wheel events are enabled
+    if (this.input.mouse) {
+      this.input.mouse.enabled = true;
+    }
+    
+    console.log('🖱️ Input setup complete for GridSelectionScene');
   }
 
   private createBackground(): void {

@@ -183,7 +183,9 @@ export class MenuButton {
 
   public setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    this.updateVisualState();
+    if (this.background && this.text && this.container) {
+      this.updateVisualState();
+    }
   }
 
   public isEnabled(): boolean {
@@ -276,11 +278,20 @@ export class MenuButton {
   }
 
   private updateVisualState(): void {
+    if (!this.background || !this.text) {
+      console.warn('MenuButton: Background or text not initialized');
+      return;
+    }
+
     if (this.enabled) {
       this.background.setFillStyle(this.style.backgroundColor!);
-      this.text.setColor(this.style.textColor!);
+      if (this.style.textColor) {
+        this.text.setColor(this.style.textColor);
+      }
       this.container.setAlpha(1.0);
-      this.container.input!.enabled = true;
+      if (this.container.input) {
+        this.container.input.enabled = true;
+      }
       
       // Add focus indicator
       if (this.focused) {
@@ -290,9 +301,13 @@ export class MenuButton {
       }
     } else {
       this.background.setFillStyle(this.style.disabledBackgroundColor!);
-      this.text.setColor(this.style.disabledTextColor!);
+      if (this.style.disabledTextColor) {
+        this.text.setColor(this.style.disabledTextColor);
+      }
       this.container.setAlpha(0.6);
-      this.container.input!.enabled = false;
+      if (this.container.input) {
+        this.container.input.enabled = false;
+      }
       this.container.setScale(1.0); // Reset scale when disabled
       this.background.setStrokeStyle(this.style.borderWidth!, this.style.borderColor);
     }

@@ -433,10 +433,15 @@ export class MainMenu extends Scene {
    * Handles Build Level button click
    */
   private handleBuildButton(): void {
-    // Start level builder with customization data
-    this.scene.start('LevelBuilder', { 
-      customization: this.customization 
-    });
+    try {
+      console.log('🔨 Starting Level Builder with customization:', this.customization);
+      // Start level builder with customization data
+      this.scene.start('LevelBuilder', { 
+        customization: this.customization 
+      });
+    } catch (error) {
+      console.error('Failed to start Level Builder:', error);
+    }
   }
   
   /**

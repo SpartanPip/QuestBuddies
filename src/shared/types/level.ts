@@ -11,8 +11,9 @@ export interface EnemySpawn {
 
 export interface LevelData {
   tiles: number[][];
+  tileSprites: (string | null)[][]; // Store sprite information for each tile, null for empty tiles
   enemies: EnemySpawn[];
-  spawn: Position;
+  spawn: Position | null; // Spawn point can be null if not set
   metadata: {
     name: string;
     author: string;

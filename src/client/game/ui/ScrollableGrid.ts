@@ -17,6 +17,7 @@ export class ScrollableGrid extends Phaser.GameObjects.Container {
   private maxScrollY: number = 0;
   private columnsPerRow: number = 4;
   private onSelectCallback?: (data: OptionElementData) => void;
+  private wheelHandler?: (pointer: Phaser.Input.Pointer, gameObjects: any, deltaX: number, deltaY: number) => void;
 
   constructor(scene: Phaser.Scene, x: number, y: number, width: number, height: number) {
     super(scene, x, y);
@@ -37,11 +38,33 @@ export class ScrollableGrid extends Phaser.GameObjects.Container {
     this.gridContainer = this.scene.add.container(0, 0);
     this.scrollableContent.add(this.gridContainer);
 
-    // Create scrollable area border for debugging
-    const border = this.scene.add.rectangle(0, 0, this.viewport.width, this.viewport.height);
-    border.setStrokeStyle(2, 0xff0000); // Red border
-    border.setFillStyle(0x000000, 0); // Transparent fill
-    this.add(border);
+
+  }
+
+  private handleWheelEvent(deltaY: number): void {
+    console.log('🖱️ SCROLL DEBUG: Wheel event detected!', {
+      deltaY,
+      currentScrollY: this.currentScrollY,
+      maxScrollY: this.maxScrollY,
+      canScrollDown: deltaY > 0 && this.currentScrollY < this.maxScrollY,
+      canScrollUp: deltaY < 0 && this.currentScrollY > 0
+    });
+    
+    if (this.maxScrollY > 0) {
+      if (deltaY > 0 && this.currentScrollY < this.maxScrollY) {
+        this.currentScrollY = Math.min(this.maxScrollY, this.currentScrollY + ScrollableGrid.CONFIG.SCROLL_STEP);
+        console.log('🖱️ SCROLL DEBUG: Scrolled DOWN to:', this.currentScrollY);
+      } else if (deltaY < 0 && this.currentScrollY > 0) {
+        this.currentScrollY = Math.max(0, this.currentScrollY - ScrollableGrid.CONFIG.SCROLL_STEP);
+        console.log('🖱️ SCROLL DEBUG: Scrolled UP to:', this.currentScrollY);
+      } else {
+        console.log('🖱️ SCROLL DEBUG: Scroll blocked at boundary');
+      }
+      
+      this.positionGrid();
+    } else {
+      console.log('🖱️ SCROLL DEBUG: No scrolling needed (maxScrollY = 0)');
+    }
   }
 
   private setupEventBlocking(): void {
@@ -72,32 +95,38 @@ export class ScrollableGrid extends Phaser.GameObjects.Container {
       pointer.event.stopPropagation();
     });
 
-    // Handle wheel events directly on the container
-    this.on('wheel', (_pointer: Phaser.Input.Pointer, _deltaX: number, deltaY: number) => {
-      console.log('🖱️ SCROLL DEBUG: Wheel event detected on container!', {
-        deltaY,
-        currentScrollY: this.currentScrollY,
-        maxScrollY: this.maxScrollY,
-        canScrollDown: deltaY > 0 && this.currentScrollY < this.maxScrollY,
-        canScrollUp: deltaY < 0 && this.currentScrollY > 0
-      });
-      
-      if (this.maxScrollY > 0) {
-        if (deltaY > 0 && this.currentScrollY < this.maxScrollY) {
-          this.currentScrollY = Math.min(this.maxScrollY, this.currentScrollY + ScrollableGrid.CONFIG.SCROLL_STEP);
-          console.log('🖱️ SCROLL DEBUG: Scrolled DOWN to:', this.currentScrollY);
-        } else if (deltaY < 0 && this.currentScrollY > 0) {
-          this.currentScrollY = Math.max(0, this.currentScrollY - ScrollableGrid.CONFIG.SCROLL_STEP);
-          console.log('🖱️ SCROLL DEBUG: Scrolled UP to:', this.currentScrollY);
-        } else {
-          console.log('🖱️ SCROLL DEBUG: Scroll blocked at boundary');
-        }
-        
-        this.positionGrid();
-      } else {
-        console.log('🖱️ SCROLL DEBUG: No scrolling needed (maxScrollY = 0)');
+    // Set up wheel event handling using the scene's input system
+    // This approach should work more reliably than container-based wheel events
+    this.setupWheelEventHandling();
+  }
+
+  private setupWheelEventHandling(): void {
+    // Store reference to the wheel handler for cleanup
+    this.wheelHandler = (pointer: Phaser.Input.Pointer, _gameObjects: any, _deltaX: number, deltaY: number) => {
+      // Check if the pointer is within our bounds
+      if (this.isPointerWithinBounds(pointer)) {
+        console.log('🖱️ SCROLL DEBUG: Scene wheel event within bounds');
+        this.handleWheelEvent(deltaY);
       }
-    });
+    };
+
+    // Add wheel event listener to the scene
+    this.scene.input.on('wheel', this.wheelHandler);
+  }
+
+  private isPointerWithinBounds(pointer: Phaser.Input.Pointer): boolean {
+    // Convert pointer position to world coordinates
+    const worldPoint = this.scene.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    
+    // Check if the world point is within our container bounds
+    const bounds = new Phaser.Geom.Rectangle(
+      this.x - this.viewport.width / 2,
+      this.y - this.viewport.height / 2,
+      this.viewport.width,
+      this.viewport.height
+    );
+    
+    return Phaser.Geom.Rectangle.Contains(bounds, worldPoint.x, worldPoint.y);
   }
 
   public setOptions(optionsData: OptionElementData[]): void {
@@ -205,6 +234,11 @@ export class ScrollableGrid extends Phaser.GameObjects.Container {
   }
 
   public override destroy(): void {
+    // Clean up wheel event listener
+    if (this.wheelHandler) {
+      this.scene.input.off('wheel', this.wheelHandler);
+      this.wheelHandler = undefined;
+    }
     this.clearOptions();
     super.destroy();
   }

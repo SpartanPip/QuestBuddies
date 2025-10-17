@@ -5,7 +5,7 @@ export interface OptionElementData {
   id: string;
   sprite: string;
   label: string;
-  data?: any;
+  data?: unknown;
 }
 
 export class OptionElement extends Phaser.GameObjects.Container {
@@ -99,10 +99,19 @@ export class OptionElement extends Phaser.GameObjects.Container {
   }
 
   private setupInteractions(): void {
-    this.background.setInteractive();
+    // Make the entire container interactive instead of just the background
+    this.setInteractive(
+      new Phaser.Geom.Rectangle(
+        -OptionElement.CONFIG.WIDTH / 2,
+        -OptionElement.CONFIG.HEIGHT / 2,
+        OptionElement.CONFIG.WIDTH,
+        OptionElement.CONFIG.HEIGHT
+      ),
+      Phaser.Geom.Rectangle.Contains
+    );
 
     // Click handler
-    this.background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    this.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       // Stop the event from propagating to parent containers
       pointer.event.stopPropagation();
       
@@ -111,13 +120,19 @@ export class OptionElement extends Phaser.GameObjects.Container {
       }
     });
 
+    // Handle wheel events by passing them through to parent
+    this.on('wheel', (_pointer: Phaser.Input.Pointer, _deltaX: number, deltaY: number) => {
+      // Don't stop propagation - let the wheel event bubble up to ScrollableGrid
+      console.log('🖱️ OptionElement: Wheel event passed through', { deltaY });
+    });
+
     // Hover effects
-    this.background.on('pointerover', () => {
+    this.on('pointerover', () => {
       this.background.setStrokeStyle(3, ColorTheme.SUCCESS);
       this.background.setAlpha(0.8);
     });
 
-    this.background.on('pointerout', () => {
+    this.on('pointerout', () => {
       this.background.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
       this.background.setAlpha(1);
     });
