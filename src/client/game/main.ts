@@ -5,6 +5,7 @@ import { MainMenu } from './scenes/MainMenu';
 import { LevelBuilder } from './scenes/LevelBuilder';
 import { GamePlay } from './scenes/GamePlay';
 import { Customize } from './scenes/Customize';
+import { GridSelectionScene } from './scenes/GridSelectionScene';
 import * as Phaser from 'phaser';
 import { AUTO, Game } from 'phaser';
 import { Preloader } from './scenes/Preloader';
@@ -23,7 +24,7 @@ const config: Phaser.Types.Core.GameConfig = {
     width: 1024,
     height: 768,
   },
-  scene: [Boot, Preloader, MainMenu, MainGame, GameOver, LevelBuilder, GamePlay, Customize],
+  scene: [Boot, Preloader, MainMenu, MainGame, GameOver, LevelBuilder, GamePlay, Customize, GridSelectionScene],
 };
 
 const StartGame = (parent: string) => {

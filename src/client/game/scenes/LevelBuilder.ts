@@ -5,6 +5,8 @@ import { GridUtils } from '../utils/GridUtils';
 import { LevelManager } from '../managers/LevelManager';
 import { StorageUtils, CustomizationData } from '../utils/StorageUtils';
 import { ColorTheme } from '../utils/ColorTheme';
+import { ScrollableGrid } from '../ui/ScrollableGrid';
+import { OptionElementData } from '../ui/OptionElement';
 
 export class LevelBuilder extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
@@ -16,6 +18,44 @@ export class LevelBuilder extends Scene {
   private selectedEnemyType: number = ENEMY_TYPES.BASIC;
   private selectedTileSprite: string = 'tile-dirt1';
   private isDialogOpen: boolean = false;
+
+  // Store original camera dimensions for UI positioning (before zoom)
+  private originalCameraWidth: number = 0;
+  private originalCameraHeight: number = 0;
+  private originalCameraCenterX: number = 0;
+
+
+
+  // Tile options data
+  private static readonly TILE_OPTIONS = [
+    // Dirt tiles
+    { sprite: 'tile-dirt1', label: 'Dirt Ground 1' },
+    { sprite: 'tile-dirt2', label: 'Dirt Ground 2' },
+    { sprite: 'tile-dirt3', label: 'Dirt Ground 3' },
+    { sprite: 'tile-dirt4', label: 'Dirt Ground 4' },
+    { sprite: 'tile-dirt5', label: 'Dirt Ground 5' },
+    { sprite: 'tile-dirt6', label: 'Dirt Ground 6' },
+    { sprite: 'tile-dirt7', label: 'Dirt Ground 7' },
+    { sprite: 'tile-dirt8', label: 'Dirt Ground 8' },
+    { sprite: 'tile-dirt9', label: 'Dirt Ground 9' },
+    // Grass tiles
+    { sprite: 'tile-grass1', label: 'Grass Ground 1' },
+    { sprite: 'tile-grass2', label: 'Grass Ground 2' },
+    { sprite: 'tile-grass3', label: 'Grass Ground 3' },
+    { sprite: 'tile-grass4', label: 'Grass Ground 4' },
+    { sprite: 'tile-grass5', label: 'Grass Ground 5' },
+    { sprite: 'tile-grass6', label: 'Grass Ground 6' },
+    { sprite: 'tile-grass7', label: 'Grass Ground 7' },
+    { sprite: 'tile-grass8', label: 'Grass Ground 8' },
+    { sprite: 'tile-grass9', label: 'Grass Ground 9' }
+  ];
+
+  // Enemy options data
+  private static readonly ENEMY_OPTIONS = [
+    { type: ENEMY_TYPES.BASIC, label: 'Bug 1', color: 0xFF6666, sprite: 'enemy-bug1', scale: 0.3, tint: 0xff0000 },
+    { type: ENEMY_TYPES.FAST, label: 'Bug 2', color: 0x66FF66, sprite: 'enemy-bug2', scale: 0.25, tint: 0xff6600 },
+    { type: ENEMY_TYPES.HEAVY, label: 'Bug 3', color: 0x6666FF, sprite: 'enemy-bug3', scale: 0.35, tint: 0x660066 }
+  ];
   private levelManager: LevelManager;
   private autosaveTimer: number | null = null;
   private customization: CustomizationData;
@@ -28,6 +68,11 @@ export class LevelBuilder extends Scene {
   create() {
     this.camera = this.cameras.main;
     this.camera.setBackgroundColor(ColorTheme.BACKGROUND_DARK);
+
+    // Store original camera dimensions before any zoom is applied
+    this.originalCameraWidth = this.camera.width;
+    this.originalCameraHeight = this.camera.height;
+    this.originalCameraCenterX = this.camera.centerX;
 
     this.initializeLevelData();
     this.setupGrid();
@@ -160,12 +205,12 @@ export class LevelBuilder extends Scene {
   }
 
   private createHeader(): void {
-    // Create header background
+    // Create header background using original camera dimensions
     const headerHeight = 60;
     const headerBackground = this.add.rectangle(
-      this.cameras.main.centerX,
+      this.originalCameraCenterX,
       headerHeight / 2,
-      this.cameras.main.width,
+      this.originalCameraWidth,
       headerHeight,
       ColorTheme.BACKGROUND_OVERLAY,
       0.9
@@ -174,8 +219,8 @@ export class LevelBuilder extends Scene {
     headerBackground.setScrollFactor(0);
     headerBackground.setDepth(1000);
 
-    // Create header container centered at top
-    const header = this.add.container(this.cameras.main.centerX, headerHeight / 2);
+    // Create header container centered at top using original camera dimensions
+    const header = this.add.container(this.originalCameraCenterX, headerHeight / 2);
     header.setName('header');
 
     // Mode selection buttons
@@ -233,8 +278,8 @@ export class LevelBuilder extends Scene {
 
     // Ensure all buttons in header have higher depth
     header.list.forEach(child => {
-      if (child.setDepth) {
-        child.setDepth(1002);
+      if ('setDepth' in child) {
+        (child as any).setDepth(1002);
       }
     });
 
@@ -360,10 +405,10 @@ export class LevelBuilder extends Scene {
   private isPointerInUIArea(pointer: Phaser.Input.Pointer): boolean {
     const headerHeight = 60;
     const footerHeight = 60;
-    const footerY = this.cameras.main.height - footerHeight;
+    const footerY = this.originalCameraHeight - footerHeight;
 
     console.log('--- UI Area Check ---');
-    console.log('Header height:', headerHeight, 'Footer Y:', footerY, 'Camera height:', this.cameras.main.height);
+    console.log('Header height:', headerHeight, 'Footer Y:', footerY, 'Original camera height:', this.originalCameraHeight);
     console.log('Pointer Y:', pointer.y);
 
     // Check if pointer is in header area
@@ -377,8 +422,6 @@ export class LevelBuilder extends Scene {
       console.log('✅ In footer area');
       return true;
     }
-
-
 
     console.log('❌ Not in any UI area');
     return false;
@@ -587,14 +630,14 @@ export class LevelBuilder extends Scene {
   }
 
   private createSaveToolbar(): void {
-    // Create footer background
+    // Create footer background using original camera dimensions
     const footerHeight = 60;
-    const footerY = this.cameras.main.height - footerHeight;
+    const footerY = this.originalCameraHeight - footerHeight;
 
     const footerBackground = this.add.rectangle(
-      this.cameras.main.centerX,
+      this.originalCameraCenterX,
       footerY + footerHeight / 2,
-      this.cameras.main.width,
+      this.originalCameraWidth,
       footerHeight,
       ColorTheme.BACKGROUND_OVERLAY,
       0.9
@@ -603,8 +646,8 @@ export class LevelBuilder extends Scene {
     footerBackground.setScrollFactor(0);
     footerBackground.setDepth(1000);
 
-    // Create container centered at bottom
-    const footer = this.add.container(this.cameras.main.centerX, footerY + footerHeight / 2);
+    // Create container centered at bottom using original camera dimensions
+    const footer = this.add.container(this.originalCameraCenterX, footerY + footerHeight / 2);
     footer.setName('footer');
 
     // Post button
@@ -643,8 +686,8 @@ export class LevelBuilder extends Scene {
 
     // Ensure all buttons in footer have higher depth
     footer.list.forEach(child => {
-      if (child.setDepth) {
-        child.setDepth(1002);
+      if ('setDepth' in child) {
+        (child as any).setDepth(1002);
       }
     });
   }
@@ -828,18 +871,18 @@ export class LevelBuilder extends Scene {
   }
 
   private showRetryableError(title: string, details: string, retryCallback: () => void): void {
-    // Create error overlay
+    // Create error overlay using original camera dimensions
     const overlay = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
+      this.originalCameraCenterX,
+      this.originalCameraHeight / 2,
+      this.originalCameraWidth,
+      this.originalCameraHeight,
       0x000000,
       0.8
     ).setOrigin(0.5).setScrollFactor(0).setDepth(3000);
 
-    // Error container
-    const errorContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
+    // Error container using original camera dimensions
+    const errorContainer = this.add.container(this.originalCameraCenterX, this.originalCameraHeight / 2);
     errorContainer.setScrollFactor(0).setDepth(3001);
 
     // Error background
@@ -991,313 +1034,69 @@ export class LevelBuilder extends Scene {
     );
   }
 
+
+
   private showTileSelectionPopup(): void {
-    // Set dialog flag and disable scene input events
-    this.isDialogOpen = true;
-    this.disableSceneInput();
-    this.disableCameraZoom();
-
-    // Create overlay that blocks all clicks
-    const overlay = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      0x000000,
-      0.7
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000).setInteractive();
-
-    // Block all pointer events from passing through the overlay
-    overlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      pointer.event.stopPropagation();
-    });
-
-    // Dialog container
-    const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
-    dialogContainer.setScrollFactor(0).setDepth(3001);
-
-    // Dialog background - larger to accommodate more tiles
-    const background = this.add.rectangle(0, 0, 600, 500, ColorTheme.SECONDARY_DARK, 0.95);
-    background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
-    background.setInteractive();
-    background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      pointer.event.stopPropagation();
-    });
-
-    // Title
-    const titleText = this.add.text(0, -220, 'Select Tile', {
-      ...ColorTheme.getTextStyle('medium'),
-      fontSize: '20px',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // All available tile options
-    const tileOptions = [
-      // Dirt tiles
-      { sprite: 'tile-dirt1', label: 'Dirt Ground 1' },
-      { sprite: 'tile-dirt2', label: 'Dirt Ground 2' },
-      { sprite: 'tile-dirt3', label: 'Dirt Ground 3' },
-      { sprite: 'tile-dirt4', label: 'Dirt Ground 4' },
-      { sprite: 'tile-dirt5', label: 'Dirt Ground 5' },
-      { sprite: 'tile-dirt6', label: 'Dirt Ground 6' },
-      { sprite: 'tile-dirt7', label: 'Dirt Ground 7' },
-      { sprite: 'tile-dirt8', label: 'Dirt Ground 8' },
-      { sprite: 'tile-dirt9', label: 'Dirt Ground 9' },
-      // Grass tiles
-      { sprite: 'tile-grass1', label: 'Grass Ground 1' },
-      { sprite: 'tile-grass2', label: 'Grass Ground 2' },
-      { sprite: 'tile-grass3', label: 'Grass Ground 3' },
-      { sprite: 'tile-grass4', label: 'Grass Ground 4' },
-      { sprite: 'tile-grass5', label: 'Grass Ground 5' },
-      { sprite: 'tile-grass6', label: 'Grass Ground 6' },
-      { sprite: 'tile-grass7', label: 'Grass Ground 7' },
-      { sprite: 'tile-grass8', label: 'Grass Ground 8' },
-      { sprite: 'tile-grass9', label: 'Grass Ground 9' }
-    ];
-
-    // Create dedicated scroll viewport container
-    const viewportWidth = 480;
-    const viewportHeight = 300;
-    const viewportContainer = this.add.container(0, -50); // Position between title and cancel button
-
-    // Create scroll mask that fills the viewport (transparent)
-    const scrollMask = this.add.graphics();
-    scrollMask.fillStyle(0xffffff, 0); // Transparent fill for masking only
-    scrollMask.fillRect(-viewportWidth / 2, -viewportHeight / 2, viewportWidth, viewportHeight);
-
-    // Scrollable content container that will move when scrolling
-    const scrollableContent = this.add.container(0, 0);
-    scrollableContent.setMask(scrollMask.createGeometryMask());
-
-    // Grid container for all tiles - starts at top of content
-    const gridContainer = this.add.container(0, -viewportHeight / 2 + 40); // 40px padding from top
-
-    // Calculate scroll limits
-    let currentScrollY = 0;
-    const totalContentHeight = Math.ceil(tileOptions.length / 4) * 80 + 80; // Extra padding at bottom
-    const maxScrollY = Math.max(0, totalContentHeight - viewportHeight + 80); // Account for padding
-
-    tileOptions.forEach((tileData, index) => {
-      const row = Math.floor(index / 4); // 4 columns for better layout
-      const col = index % 4;
-      const x = (col - 1.5) * 120; // Center 4 columns
-      const y = row * 80;
-
-      // Tile preview background
-      const tileButton = this.add.rectangle(x, y, 100, 70, 0x444444, 0.3);
-      tileButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-      tileButton.setInteractive();
-
-      // Tile sprite preview
-      const tileSprite = this.add.image(x, y - 10, tileData.sprite);
-      tileSprite.setDisplaySize(32, 32);
-
-      // Tile label
-      const tileLabel = this.add.text(x, y + 20, tileData.label, {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '10px'
-      }).setOrigin(0.5);
-
-      // Click handler - store the sprite key for direct use
-      tileButton.on('pointerdown', () => {
-        this.selectedTileSprite = tileData.sprite;
-        this.placementMode = 'tile';
-        this.updateModeSelection();
-        this.closeSelectionPopup(overlay, dialogContainer);
-      });
-
-      // Hover effects
-      tileButton.on('pointerover', () => {
-        tileButton.setStrokeStyle(3, ColorTheme.SUCCESS);
-        tileButton.setAlpha(0.8);
-      });
-      tileButton.on('pointerout', () => {
-        tileButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-        tileButton.setAlpha(1);
-      });
-
-      gridContainer.add([tileButton, tileSprite, tileLabel]);
-    });
-
-    // Build the container hierarchy
-    scrollableContent.add(gridContainer);
-    viewportContainer.add([scrollMask, scrollableContent]);
-
-    // Add scroll functionality
-    const scrollStep = 40;
-
-    // Mouse wheel scrolling
-    overlay.on('wheel', (pointer: any, deltaX: number, deltaY: number) => {
-      if (deltaY > 0 && currentScrollY < maxScrollY) {
-        currentScrollY = Math.min(maxScrollY, currentScrollY + scrollStep);
-      } else if (deltaY < 0 && currentScrollY > 0) {
-        currentScrollY = Math.max(0, currentScrollY - scrollStep);
-      }
-      gridContainer.setY(-viewportHeight / 2 + 40 - currentScrollY);
-    });
-
-    // Add scroll indicators if content is scrollable
-    if (maxScrollY > 0) {
-      const scrollUpIndicator = this.add.text(220, -200, '▲ Scroll Up', {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
-      }).setOrigin(0.5);
-
-      const scrollDownIndicator = this.add.text(220, 100, '▼ Scroll Down', {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
-      }).setOrigin(0.5);
-
-      dialogContainer.add([scrollUpIndicator, scrollDownIndicator]);
-    }
-
-    // Cancel button
-    const cancelButton = this.add.text(0, 170, 'Cancel', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '16px',
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive().setName('dialog_cancel_button');
-
-    cancelButton.on('pointerdown', () => {
-      this.closeSelectionPopup(overlay, dialogContainer);
-    });
-
-    // Hover effect for cancel button
-    cancelButton.on('pointerover', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
+    console.log('🚀 === SHOWING TILE SELECTION ===');
+    
+    // Prepare tile options
+    const tileOptions: OptionElementData[] = LevelBuilder.TILE_OPTIONS.map(tile => ({
+      id: tile.sprite,
+      sprite: tile.sprite,
+      label: tile.label,
+      data: { sprite: tile.sprite, type: TILE_TYPES.WALL }
     }));
-    cancelButton.on('pointerout', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
-    }));
-
-    dialogContainer.add([background, titleText, viewportContainer, cancelButton]);
+    
+    // Navigate to GridSelectionScene
+    this.scene.start('GridSelectionScene', {
+      options: tileOptions,
+      title: 'Select Tile Type',
+      returnScene: 'LevelBuilder',
+      returnData: { customization: this.customization }
+    });
+    
+    console.log('🎯 Navigated to GridSelectionScene for tile selection');
   }
 
   private showEnemySelectionPopup(): void {
-    // Set dialog flag and disable scene input events
-    this.isDialogOpen = true;
-    this.disableSceneInput();
-    this.disableCameraZoom();
-
-    // Create overlay that blocks all clicks
-    const overlay = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      0x000000,
-      0.7
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000).setInteractive();
-
-    // Block all pointer events from passing through the overlay
-    overlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      pointer.event.stopPropagation();
-    });
-
-    // Dialog container
-    const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
-    dialogContainer.setScrollFactor(0).setDepth(3001);
-
-    // Dialog background
-    const background = this.add.rectangle(0, 0, 500, 400, ColorTheme.SECONDARY_DARK, 0.95);
-    background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
-    background.setInteractive();
-    background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      pointer.event.stopPropagation();
-    });
-
-    // Title
-    const titleText = this.add.text(0, -170, 'Select Enemy Type', {
-      ...ColorTheme.getTextStyle('medium'),
-      fontSize: '20px',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // Enemy options grid
-    const enemyOptions = [
-      { type: ENEMY_TYPES.BASIC, label: 'Bug 1', color: 0xFF6666, sprite: 'enemy-bug1', scale: 0.3, tint: 0xff0000 },
-      { type: ENEMY_TYPES.FAST, label: 'Bug 2', color: 0x66FF66, sprite: 'enemy-bug2', scale: 0.25, tint: 0xff6600 },
-      { type: ENEMY_TYPES.HEAVY, label: 'Bug 3', color: 0x6666FF, sprite: 'enemy-bug3', scale: 0.35, tint: 0x660066 }
-    ];
-
-    const gridContainer = this.add.container(0, -50);
-
-    enemyOptions.forEach((enemyData, index) => {
-      const row = Math.floor(index / 2);
-      const col = index % 2;
-      const x = (col - 0.5) * 120;
-      const y = row * 80;
-
-      // Enemy preview background
-      const enemyButton = this.add.rectangle(x, y, 100, 70, enemyData.color, 0.3);
-      enemyButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-      enemyButton.setInteractive();
-
-      // Enemy sprite preview
-      const enemySprite = this.add.image(x, y - 10, enemyData.sprite);
-      enemySprite.setScale(enemyData.scale);
-      enemySprite.setTint(enemyData.tint);
-
-      // Enemy label
-      const enemyLabel = this.add.text(x, y + 20, enemyData.label, {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
-      }).setOrigin(0.5);
-
-      // Click handler
-      enemyButton.on('pointerdown', () => {
-        this.selectedEnemyType = enemyData.type;
-        this.placementMode = 'enemy';
-        this.updateModeSelection();
-        this.closeSelectionPopup(overlay, dialogContainer);
-      });
-
-      // Hover effects
-      enemyButton.on('pointerover', () => {
-        enemyButton.setStrokeStyle(3, ColorTheme.SUCCESS);
-        enemyButton.setAlpha(0.8);
-      });
-      enemyButton.on('pointerout', () => {
-        enemyButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-        enemyButton.setAlpha(1);
-      });
-
-      gridContainer.add([enemyButton, enemySprite, enemyLabel]);
-    });
-
-    // Cancel button
-    const cancelButton = this.add.text(0, 120, 'Cancel', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '16px',
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive().setName('dialog_cancel_button');
-
-    cancelButton.on('pointerdown', () => {
-      this.closeSelectionPopup(overlay, dialogContainer);
-    });
-
-    // Hover effect for cancel button
-    cancelButton.on('pointerover', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
+    console.log('🚀 === SHOWING ENEMY SELECTION ===');
+    
+    // Prepare enemy options
+    const enemyOptions: OptionElementData[] = LevelBuilder.ENEMY_OPTIONS.map(enemy => ({
+      id: enemy.type.toString(),
+      sprite: enemy.sprite,
+      label: enemy.label,
+      data: { type: enemy.type, sprite: enemy.sprite, scale: enemy.scale, tint: enemy.tint }
     }));
-    cancelButton.on('pointerout', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
-    }));
-
-    dialogContainer.add([background, titleText, gridContainer, cancelButton]);
+    
+    // Navigate to GridSelectionScene
+    this.scene.start('GridSelectionScene', {
+      options: enemyOptions,
+      title: 'Select Enemy Type',
+      returnScene: 'LevelBuilder',
+      returnData: { customization: this.customization }
+    });
+    
+    console.log('🎯 Navigated to GridSelectionScene for enemy selection');
   }
 
-  private closeSelectionPopup(overlay: Phaser.GameObjects.Rectangle, dialogContainer: Phaser.GameObjects.Container): void {
-    this.isDialogOpen = false;
-    overlay.destroy();
-    dialogContainer.destroy();
-
-    // Re-enable input after a small delay to prevent the same click from placing tiles
-    this.time.delayedCall(50, () => {
-      this.enableSceneInput();
-    });
+  private handleGridSelection(selectedOption: OptionElementData): void {
+    console.log('✅ Handling grid selection:', selectedOption);
+    
+    if (selectedOption.data.sprite && selectedOption.data.type !== undefined) {
+      // This is a tile selection
+      this.selectedTileSprite = selectedOption.data.sprite;
+      this.selectedTileType = selectedOption.data.type;
+      this.placementMode = 'tile';
+      this.updateModeSelection();
+      console.log('🎨 Tile selection updated:', { sprite: this.selectedTileSprite, type: this.selectedTileType });
+    } else if (selectedOption.data.type !== undefined && selectedOption.data.scale !== undefined) {
+      // This is an enemy selection
+      this.selectedEnemyType = selectedOption.data.type;
+      this.placementMode = 'enemy';
+      this.updateModeSelection();
+      console.log('👾 Enemy selection updated:', { type: this.selectedEnemyType });
+    }
   }
 
   private showConfirmationDialog(title: string, message: string, onConfirm: () => void): void {
@@ -1305,12 +1104,12 @@ export class LevelBuilder extends Scene {
     this.isDialogOpen = true;
     this.disableSceneInput();
 
-    // Create overlay that blocks all clicks
+    // Create overlay that blocks all clicks using original camera dimensions
     const overlay = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
+      this.originalCameraCenterX,
+      this.originalCameraHeight / 2,
+      this.originalCameraWidth,
+      this.originalCameraHeight,
       0x000000,
       0.7
     ).setOrigin(0.5).setScrollFactor(0).setDepth(3000).setInteractive();
@@ -1326,8 +1125,8 @@ export class LevelBuilder extends Scene {
       pointer.event.stopPropagation();
     });
 
-    // Dialog container
-    const dialogContainer = this.add.container(this.cameras.main.centerX, this.cameras.main.centerY);
+    // Dialog container using original camera dimensions
+    const dialogContainer = this.add.container(this.originalCameraCenterX, this.originalCameraHeight / 2);
     dialogContainer.setScrollFactor(0).setDepth(3001);
 
     // Dialog background - make interactive to capture clicks
@@ -1431,8 +1230,8 @@ export class LevelBuilder extends Scene {
   }
 
   private showMessage(text: string, color: number, duration: number = 3000): void {
-    // Create message container
-    const messageContainer = this.add.container(this.cameras.main.centerX, 100);
+    // Create message container using original camera dimensions
+    const messageContainer = this.add.container(this.originalCameraCenterX, 100);
     messageContainer.setScrollFactor(0).setDepth(2000);
 
     // Message background
@@ -1478,8 +1277,8 @@ export class LevelBuilder extends Scene {
   }
 
   private showProgressMessage(text: string, progress: number = 0): Phaser.GameObjects.Container {
-    // Create progress message container
-    const container = this.add.container(this.cameras.main.centerX, 150);
+    // Create progress message container using original camera dimensions
+    const container = this.add.container(this.originalCameraCenterX, 150);
     container.setScrollFactor(0).setDepth(2000);
 
     // Background
@@ -1522,10 +1321,15 @@ export class LevelBuilder extends Scene {
     }
   }
 
-  init(data?: { customization?: CustomizationData }): void {
+  init(data?: { customization?: CustomizationData; selectedOption?: OptionElementData }): void {
     // Store customization data for preview purposes
     // Load from storage if not provided to ensure latest customization is used
     this.customization = data?.customization || StorageUtils.loadCustomization();
+
+    // Handle selection from GridSelectionScene
+    if (data?.selectedOption) {
+      this.handleGridSelection(data.selectedOption);
+    }
 
     // Cleanup previous instance if any
     if (this.autosaveTimer) {
@@ -1543,5 +1347,50 @@ export class LevelBuilder extends Scene {
 
   getLevelData(): LevelData | null {
     return this.levelData ? { ...this.levelData } : null;
+  }
+
+  // Debug method to add visual indicators for troubleshooting
+  private addDebugVisuals(): void {
+    console.log('🔧 Debug visuals disabled');
+  }
+
+  // Method to log detailed scene state
+  private logSceneState(): void {
+    console.log('📊 === DETAILED SCENE STATE ===');
+    console.log('Camera:', {
+      x: this.cameras.main.x,
+      y: this.cameras.main.y,
+      centerX: this.cameras.main.centerX,
+      centerY: this.cameras.main.centerY,
+      width: this.cameras.main.width,
+      height: this.cameras.main.height,
+      zoom: this.cameras.main.zoom,
+      scrollX: this.cameras.main.scrollX,
+      scrollY: this.cameras.main.scrollY
+    });
+    
+    console.log('Scene:', {
+      childrenCount: this.children.list.length,
+      inputEnabled: this.input.enabled,
+      visible: this.visible,
+      active: this.active
+    });
+    
+    // Log all children with their properties
+    this.children.list.forEach((child, index) => {
+      console.log(`Child ${index}:`, {
+        name: child.name,
+        type: child.type,
+        visible: child.visible,
+        alpha: child.alpha,
+        depth: child.depth,
+        x: child.x,
+        y: child.y,
+        scaleX: child.scaleX,
+        scaleY: child.scaleY,
+        scrollFactorX: child.scrollFactorX,
+        scrollFactorY: child.scrollFactorY
+      });
+    });
   }
 }
