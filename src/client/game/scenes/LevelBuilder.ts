@@ -9,6 +9,7 @@ import { OptionElementData } from '../ui/OptionElement';
 
 export class LevelBuilder extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
+  private uiCamera: Phaser.Cameras.Scene2D.Camera;
   private levelData: LevelData;
   private gridGraphics: Phaser.GameObjects.Graphics;
   private selectedTileType: number = TILE_TYPES.WALL;
@@ -18,10 +19,6 @@ export class LevelBuilder extends Scene {
   private selectedTileSprite: string = 'tile-dirt1';
   private isDialogOpen: boolean = false;
 
-  // Store original camera dimensions for UI positioning (before zoom)
-  private originalCameraWidth: number = 0;
-  private originalCameraHeight: number = 0;
-  private originalCameraCenterX: number = 0;
 
 
 
@@ -71,10 +68,9 @@ export class LevelBuilder extends Scene {
       this.camera = this.cameras.main;
       this.camera.setBackgroundColor(ColorTheme.BACKGROUND_DARK);
 
-      // Store original camera dimensions before any zoom is applied
-      this.originalCameraWidth = this.camera.width;
-      this.originalCameraHeight = this.camera.height;
-      this.originalCameraCenterX = this.camera.centerX;
+      // Create UI camera for elements that should not be affected by zoom/pan
+      this.uiCamera = this.cameras.add(0, 0, this.camera.width, this.camera.height);
+      this.uiCamera.setZoom(1.0);           // Never zoom
 
       // Ensure customization is loaded if not already set
       if (!this.customization) {
@@ -93,6 +89,9 @@ export class LevelBuilder extends Scene {
 
       console.log('🎨 Setting up UI');
       this.setupUI();
+
+      console.log('📷 Configuring camera rendering');
+      this.configureCameraRendering();
 
       console.log('💾 Setting up autosave');
       this.setupAutosave();
@@ -339,14 +338,12 @@ export class LevelBuilder extends Scene {
       });
     }
 
-    // Mouse wheel zoom (optional enhancement)
+    // Mouse wheel zoom (optional enhancement) - only affects world camera, UI camera stays fixed
     this.input.on('wheel', (_pointer: any, _gameObjects: any, _deltaX: number, deltaY: number) => {
       const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
       const newZoom = Phaser.Math.Clamp(this.camera.zoom * zoomFactor, 0.5, 2);
       this.camera.setZoom(newZoom);
-
-      // Update UI positions to maintain fixed screen position
-      this.updateUIForZoom();
+      // UI camera remains unaffected at zoom 1.0
     });
   }
 
@@ -355,13 +352,26 @@ export class LevelBuilder extends Scene {
     this.createSaveToolbar();
   }
 
+  private configureCameraRendering(): void {
+    // Configure cameras to render different depth ranges to prevent duplicates
+    // Main camera renders world objects (depth 0-999)
+    this.camera.ignore(this.children.list.filter(child => (child as any).depth >= 1000));
+    
+    // UI camera renders UI elements (depth 1000+)
+    this.uiCamera.ignore(this.children.list.filter(child => (child as any).depth < 1000));
+    
+    console.log('📷 Camera rendering configured:');
+    console.log('  - Main camera: renders depths 0-999');
+    console.log('  - UI camera: renders depths 1000+');
+  }
+
   private createHeader(): void {
-    // Create header background using original camera dimensions
+    // Create header background using screen coordinates (not world coordinates)
     const headerHeight = 60;
     const headerBackground = this.add.rectangle(
-      this.originalCameraCenterX,
+      this.uiCamera.width / 2,
       headerHeight / 2,
-      this.originalCameraWidth,
+      this.uiCamera.width,
       headerHeight,
       ColorTheme.BACKGROUND_OVERLAY,
       0.9
@@ -371,8 +381,8 @@ export class LevelBuilder extends Scene {
     headerBackground.setDepth(1000);
     headerBackground.setName('header_background');
 
-    // Create header container centered at top using original camera dimensions
-    const header = this.add.container(this.originalCameraCenterX, headerHeight / 2);
+    // Create header container centered at top using screen coordinates
+    const header = this.add.container(this.uiCamera.width / 2, headerHeight / 2);
     header.setName('header');
 
     // Mode selection buttons
@@ -417,7 +427,7 @@ export class LevelBuilder extends Scene {
 
 
 
-    // Instructions text positioned below header
+    // Instructions text positioned below header using screen coordinates
     const instructions = this.add.text(20, headerHeight + 20, 'WASD: Move Camera\nClick: Place Tiles\nScroll: Zoom', {
       ...ColorTheme.getTextStyle('small', 'secondary'),
       fontSize: '12px'
@@ -466,13 +476,15 @@ export class LevelBuilder extends Scene {
   }
 
   private enableCameraZoom(): void {
-    // Re-add camera zoom wheel event
+    // Re-add camera zoom wheel event - only affects world camera, UI camera stays fixed
     this.input.on('wheel', (_pointer: any, _gameObjects: any, _deltaX: number, deltaY: number) => {
       const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
       const newZoom = Phaser.Math.Clamp(this.camera.zoom * zoomFactor, 0.5, 2);
       this.camera.setZoom(newZoom);
+      // UI camera remains unaffected at zoom 1.0
     });
   }
+
 
   private updateModeSelection(): void {
     const header = this.children.getByName('header') as Phaser.GameObjects.Container;
@@ -558,10 +570,10 @@ export class LevelBuilder extends Scene {
   private isPointerInUIArea(pointer: Phaser.Input.Pointer): boolean {
     const headerHeight = 60;
     const footerHeight = 60;
-    const footerY = this.originalCameraHeight - footerHeight;
+    const footerY = this.uiCamera.height - footerHeight;
 
     console.log('--- UI Area Check ---');
-    console.log('Header height:', headerHeight, 'Footer Y:', footerY, 'Original camera height:', this.originalCameraHeight);
+    console.log('Header height:', headerHeight, 'Footer Y:', footerY, 'UI Camera height:', this.uiCamera.height);
     console.log('Pointer Y:', pointer.y);
 
     // Check if pointer is in header area
@@ -656,6 +668,9 @@ export class LevelBuilder extends Scene {
     const tileSprite = this.add.image(x + GRID_SIZE / 2, y + GRID_SIZE / 2, spriteKey);
     tileSprite.setDisplaySize(GRID_SIZE, GRID_SIZE);
     tileSprite.setDepth(0); // Tiles render behind UI elements
+    
+    // Ensure tile is only rendered by main camera (not UI camera)
+    this.uiCamera.ignore(tileSprite);
 
     return tileSprite;
   }
@@ -751,6 +766,9 @@ export class LevelBuilder extends Scene {
     enemy.setTint(tint);
     enemy.setName(enemyKey);
     enemy.setDepth(10); // Enemies render above tiles but below UI
+    
+    // Ensure enemy is only rendered by main camera (not UI camera)
+    this.uiCamera.ignore(enemy);
   }
 
   private renderSpawnAt(gridX: number, gridY: number): void {
@@ -767,6 +785,9 @@ export class LevelBuilder extends Scene {
     spawn.setAlpha(0.8);
     spawn.setName(spawnKey);
     spawn.setDepth(10); // Spawn point renders above tiles but below UI
+    
+    // Ensure spawn point is only rendered by main camera (not UI camera)
+    this.uiCamera.ignore(spawn);
 
     const spawnText = this.add.text(worldPos.x, worldPos.y + 25, 'SPAWN', {
       ...ColorTheme.getTextStyle('small'),
@@ -776,6 +797,9 @@ export class LevelBuilder extends Scene {
     }).setOrigin(0.5);
     spawnText.setName(`${spawnKey}_text`);
     spawnText.setDepth(10);
+    
+    // Ensure spawn text is only rendered by main camera (not UI camera)
+    this.uiCamera.ignore(spawnText);
   }
 
   private removeEnemyVisual(gridX: number, gridY: number): void {
@@ -794,14 +818,14 @@ export class LevelBuilder extends Scene {
   }
 
   private createSaveToolbar(): void {
-    // Create footer background using original camera dimensions
+    // Create footer background using screen coordinates (not world coordinates)
     const footerHeight = 60;
-    const footerY = this.originalCameraHeight - footerHeight;
+    const footerY = this.uiCamera.height - footerHeight;
 
     const footerBackground = this.add.rectangle(
-      this.originalCameraCenterX,
+      this.uiCamera.width / 2,
       footerY + footerHeight / 2,
-      this.originalCameraWidth,
+      this.uiCamera.width,
       footerHeight,
       ColorTheme.BACKGROUND_OVERLAY,
       0.9
@@ -811,8 +835,8 @@ export class LevelBuilder extends Scene {
     footerBackground.setDepth(1000);
     footerBackground.setName('footer_background');
 
-    // Create container centered at bottom using original camera dimensions
-    const footer = this.add.container(this.originalCameraCenterX, footerY + footerHeight / 2);
+    // Create container centered at bottom using screen coordinates
+    const footer = this.add.container(this.uiCamera.width / 2, footerY + footerHeight / 2);
     footer.setName('footer');
 
     // Post button
@@ -864,67 +888,6 @@ export class LevelBuilder extends Scene {
     });
   }
 
-  private updateUIForZoom(): void {
-    const currentZoom = this.camera.zoom;
-
-    // Get UI elements that need to maintain fixed screen positions
-    const headerBackground = this.children.getByName('header_background') as Phaser.GameObjects.Rectangle;
-    const header = this.children.getByName('header') as Phaser.GameObjects.Container;
-    const footerBackground = this.children.getByName('footer_background') as Phaser.GameObjects.Rectangle;
-    const footer = this.children.getByName('footer') as Phaser.GameObjects.Container;
-    const instructions = this.children.getByName('instructions') as Phaser.GameObjects.Text;
-
-    // Update header elements to maintain fixed screen position
-    if (headerBackground) {
-      headerBackground.setPosition(
-        this.originalCameraCenterX / currentZoom,
-        30 / currentZoom
-      );
-      headerBackground.setDisplaySize(
-        this.originalCameraWidth / currentZoom,
-        60 / currentZoom
-      );
-    }
-
-    if (header) {
-      header.setPosition(
-        this.originalCameraCenterX / currentZoom,
-        30 / currentZoom
-      );
-      header.setScale(1 / currentZoom);
-    }
-
-    // Update footer elements to maintain fixed screen position
-    if (footerBackground) {
-      const footerY = (this.originalCameraHeight - 60) / currentZoom;
-      footerBackground.setPosition(
-        this.originalCameraCenterX / currentZoom,
-        footerY + 30 / currentZoom
-      );
-      footerBackground.setDisplaySize(
-        this.originalCameraWidth / currentZoom,
-        60 / currentZoom
-      );
-    }
-
-    if (footer) {
-      const footerY = (this.originalCameraHeight - 60) / currentZoom;
-      footer.setPosition(
-        this.originalCameraCenterX / currentZoom,
-        footerY + 30 / currentZoom
-      );
-      footer.setScale(1 / currentZoom);
-    }
-
-    // Update instructions text
-    if (instructions) {
-      instructions.setPosition(
-        20 / currentZoom,
-        80 / currentZoom
-      );
-      instructions.setScale(1 / currentZoom);
-    }
-  }
 
   private updateLevelManager(): void {
     if (this.levelData) {
@@ -1098,21 +1061,19 @@ export class LevelBuilder extends Scene {
   }
 
   private showRetryableError(title: string, details: string, retryCallback: () => void): void {
-    const currentZoom = this.camera.zoom;
-
-    // Create error overlay using original camera dimensions
+    // Create error overlay using screen coordinates
     const overlay = this.add.rectangle(
-      this.originalCameraCenterX / currentZoom,
-      this.originalCameraHeight / 2 / currentZoom,
-      this.originalCameraWidth / currentZoom,
-      this.originalCameraHeight / currentZoom,
+      this.uiCamera.width / 2,
+      this.uiCamera.height / 2,
+      this.uiCamera.width,
+      this.uiCamera.height,
       0x000000,
       0.8
     ).setOrigin(0.5).setScrollFactor(0, 0).setDepth(3000);
 
-    // Error container using original camera dimensions
-    const errorContainer = this.add.container(this.originalCameraCenterX / currentZoom, this.originalCameraHeight / 2 / currentZoom);
-    errorContainer.setScrollFactor(0, 0).setDepth(3001).setScale(1 / currentZoom);
+    // Error container using screen coordinates
+    const errorContainer = this.add.container(this.uiCamera.width / 2, this.uiCamera.height / 2);
+    errorContainer.setScrollFactor(0, 0).setDepth(3001);
 
     // Error background
     const background = this.add.rectangle(0, 0, 400, 200, ColorTheme.ERROR, 0.9);
@@ -1341,14 +1302,12 @@ export class LevelBuilder extends Scene {
     this.isDialogOpen = true;
     this.disableSceneInput();
 
-    const currentZoom = this.camera.zoom;
-
-    // Create overlay that blocks all clicks using original camera dimensions
+    // Create overlay that blocks all clicks using screen coordinates
     const overlay = this.add.rectangle(
-      this.originalCameraCenterX / currentZoom,
-      this.originalCameraHeight / 2 / currentZoom,
-      this.originalCameraWidth / currentZoom,
-      this.originalCameraHeight / currentZoom,
+      this.uiCamera.width / 2,
+      this.uiCamera.height / 2,
+      this.uiCamera.width,
+      this.uiCamera.height,
       0x000000,
       0.7
     ).setOrigin(0.5).setScrollFactor(0, 0).setDepth(3000).setInteractive();
@@ -1364,9 +1323,9 @@ export class LevelBuilder extends Scene {
       pointer.event.stopPropagation();
     });
 
-    // Dialog container using original camera dimensions
-    const dialogContainer = this.add.container(this.originalCameraCenterX / currentZoom, this.originalCameraHeight / 2 / currentZoom);
-    dialogContainer.setScrollFactor(0, 0).setDepth(3001).setScale(1 / currentZoom);
+    // Dialog container using screen coordinates
+    const dialogContainer = this.add.container(this.uiCamera.width / 2, this.uiCamera.height / 2);
+    dialogContainer.setScrollFactor(0, 0).setDepth(3001);
 
     // Dialog background - make interactive to capture clicks
     const background = this.add.rectangle(0, 0, 400, 180, ColorTheme.SECONDARY_DARK, 0.95);
@@ -1469,11 +1428,9 @@ export class LevelBuilder extends Scene {
   }
 
   private showMessage(text: string, color: number, duration: number = 3000): void {
-    const currentZoom = this.camera.zoom;
-
-    // Create message container using original camera dimensions
-    const messageContainer = this.add.container(this.originalCameraCenterX / currentZoom, 100 / currentZoom);
-    messageContainer.setScrollFactor(0, 0).setDepth(2000).setScale(1 / currentZoom);
+    // Create message container using screen coordinates
+    const messageContainer = this.add.container(this.uiCamera.width / 2, 100);
+    messageContainer.setScrollFactor(0, 0).setDepth(2000);
 
     // Message background
     const background = this.add.rectangle(0, 0, 0, 50, color, 0.9);
@@ -1518,11 +1475,9 @@ export class LevelBuilder extends Scene {
   }
 
   private showProgressMessage(text: string, progress: number = 0): Phaser.GameObjects.Container {
-    const currentZoom = this.camera.zoom;
-
-    // Create progress message container using original camera dimensions
-    const container = this.add.container(this.originalCameraCenterX / currentZoom, 150 / currentZoom);
-    container.setScrollFactor(0, 0).setDepth(2000).setScale(1 / currentZoom);
+    // Create progress message container using screen coordinates
+    const container = this.add.container(this.uiCamera.width / 2, 150);
+    container.setScrollFactor(0, 0).setDepth(2000);
 
     // Background
     const background = this.add.rectangle(0, 0, 300, 80, ColorTheme.BACKGROUND_OVERLAY, 0.9);
