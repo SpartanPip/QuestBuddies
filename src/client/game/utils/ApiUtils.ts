@@ -64,7 +64,7 @@ export class ApiUtils {
       return {
         success: true,
         message: data.message,
-        levelData: data.levelData,
+        ...(data.levelData && { levelData: data.levelData }),
       };
     }, 'loading level');
   }
@@ -73,17 +73,45 @@ export class ApiUtils {
    * Creates a fallback level when loading fails
    */
   static createFallbackLevel(): LevelData {
+    const size = 10; // Smaller, simpler square level
+    
+    // Create a simple square level with walls around the border and floor inside
+    const tiles: number[][] = [];
+    const tileSprites: (string | null)[][] = [];
+    
+    for (let y = 0; y < size; y++) {
+      const tileRow: number[] = [];
+      const spriteRow: (string | null)[] = [];
+      
+      for (let x = 0; x < size; x++) {
+        // Create a border of wall tiles
+        if (x === 0 || x === size - 1 || y === 0 || y === size - 1) {
+          tileRow.push(1); // WALL tile
+          spriteRow.push('dirt ground 1');
+        } else {
+          // All interior tiles are floor
+          tileRow.push(2); // FLOOR tile
+          spriteRow.push('grass ground 2');
+        }
+      }
+      
+      tiles.push(tileRow);
+      tileSprites.push(spriteRow);
+    }
+    
+    // Add just one enemy in the center
+    const enemies = [
+      { x: 5, y: 5, type: 0 } // Single basic enemy in the center
+    ];
+    
     return {
-      tiles: Array(20).fill(null).map(() => Array(20).fill(0)),
-      enemies: [
-        { x: 10, y: 10, type: 0 },
-        { x: 15, y: 8, type: 0 },
-        { x: 8, y: 15, type: 1 }
-      ],
-      spawn: { x: 5, y: 5 },
+      tiles,
+      tileSprites,
+      enemies,
+      spawn: { x: 2, y: 2 },
       metadata: {
-        name: 'Fallback Level',
-        author: 'System',
+        name: 'Simple Square',
+        author: 'QuestBuddies',
         created: Date.now()
       }
     };
@@ -92,24 +120,28 @@ export class ApiUtils {
   /**
    * Validates level data integrity
    */
-  static validateLevelData(levelData: any): { valid: boolean; error?: string } {
+  static validateLevelData(levelData: unknown): { valid: boolean; error?: string } {
     if (!levelData || typeof levelData !== 'object') {
       return { valid: false, error: 'Level data must be an object' };
     }
 
-    if (!Array.isArray(levelData.tiles) || levelData.tiles.length === 0) {
+    const data = levelData as Record<string, unknown>;
+
+    if (!Array.isArray(data.tiles) || data.tiles.length === 0) {
       return { valid: false, error: 'Level must have tiles array' };
     }
 
-    if (!Array.isArray(levelData.enemies)) {
+    if (!Array.isArray(data.enemies)) {
       return { valid: false, error: 'Level must have enemies array' };
     }
 
-    if (!levelData.spawn || typeof levelData.spawn.x !== 'number' || typeof levelData.spawn.y !== 'number') {
+    const spawn = data.spawn as Record<string, unknown>;
+    if (!spawn || typeof spawn.x !== 'number' || typeof spawn.y !== 'number') {
       return { valid: false, error: 'Level must have valid spawn point' };
     }
 
-    if (!levelData.metadata || !levelData.metadata.name || !levelData.metadata.author) {
+    const metadata = data.metadata as Record<string, unknown>;
+    if (!metadata || typeof metadata.name !== 'string' || typeof metadata.author !== 'string') {
       return { valid: false, error: 'Level must have metadata with name and author' };
     }
 

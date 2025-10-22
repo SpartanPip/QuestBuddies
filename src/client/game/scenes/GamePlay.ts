@@ -12,6 +12,7 @@ import { ColorTheme } from '../utils/ColorTheme';
 
 export class GamePlay extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
+  private uiCamera: Phaser.Cameras.Scene2D.Camera;
   private levelData: LevelData | null = null;
   private tilemapGraphics: Phaser.GameObjects.Graphics;
   private player: Player | null = null;
@@ -28,7 +29,7 @@ export class GamePlay extends Scene {
   private restartButton: Phaser.GameObjects.Text | null = null;
   private menuButton: Phaser.GameObjects.Text | null = null;
   private isTestMode: boolean = false;
-  private backToBuilderButton: Phaser.GameObjects.Text | null = null;
+  private backButton: Phaser.GameObjects.Text | null = null;
   private customization: CustomizationData;
 
   constructor() {
@@ -48,8 +49,20 @@ export class GamePlay extends Scene {
     this.camera = this.cameras.main;
     this.camera.setBackgroundColor(ColorTheme.BACKGROUND_DARK);
 
-    // Enable physics
-    this.physics.world.setBounds(0, 0, 0, 0); // Will be set when level loads
+    // Create UI camera for elements that should not be affected by zoom/pan
+    this.uiCamera = this.cameras.add(0, 0, this.camera.width, this.camera.height);
+    this.uiCamera.setZoom(1.0); // Never zoom
+
+    // Initialize physics world with temporary bounds
+    if (this.physics && this.physics.world) {
+      this.physics.world.setBounds(0, 0, 800, 600); // Temporary bounds
+    }
+
+    // Create UI header with back button
+    this.createHeader();
+
+    // Configure camera rendering
+    this.configureCameraRendering();
 
     // Create player health bar
     this.playerHealthBar = new PlayerHealthBar(this);
@@ -59,11 +72,79 @@ export class GamePlay extends Scene {
     } else {
       this.loadLevelFromReddit();
     }
+  }
 
-    // Add back to builder button if in test mode
-    if (this.isTestMode) {
-      this.createBackToBuilderButton();
-    }
+  private createHeader(): void {
+    // Create header background using screen coordinates (not world coordinates)
+    const headerHeight = 60;
+    const headerBackground = this.add.rectangle(
+      this.uiCamera.width / 2,
+      headerHeight / 2,
+      this.uiCamera.width,
+      headerHeight,
+      ColorTheme.BACKGROUND_OVERLAY,
+      0.9
+    );
+    headerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+    headerBackground.setScrollFactor(0, 0);
+    headerBackground.setDepth(1000);
+    headerBackground.setName('header_background');
+
+    // Create header container centered at top using screen coordinates
+    const header = this.add.container(this.uiCamera.width / 2, headerHeight / 2);
+    header.setName('header');
+
+    // Back button (positioned on the left)
+    const backButton = this.add.rectangle(-this.uiCamera.width / 2 + 50, 0, 80, 40, ColorTheme.BUTTON_SECONDARY)
+      .setInteractive()
+      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
+      .setName('header_back_button');
+
+    const backLabel = this.add.text(-this.uiCamera.width / 2 + 50, 0, '← Back', {
+      ...ColorTheme.getTextStyle('small'),
+      fontSize: '14px'
+    }).setOrigin(0.5);
+
+    backButton.on('pointerdown', () => {
+      if (this.isTestMode) {
+        this.scene.start('LevelBuilder');
+      } else {
+        this.scene.start('MainMenu');
+      }
+    });
+
+    backButton.on('pointerover', () => {
+      backButton.setStrokeStyle(3, ColorTheme.SUCCESS);
+    });
+    backButton.on('pointerout', () => {
+      backButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
+    });
+
+    // Add back button to header
+    header.add([backButton, backLabel]);
+
+    header.setScrollFactor(0, 0);
+    header.setDepth(1001);
+
+    // Ensure all buttons in header have higher depth
+    header.list.forEach(child => {
+      if ('setDepth' in child) {
+        (child as any).setDepth(1002);
+      }
+    });
+  }
+
+  private configureCameraRendering(): void {
+    // Configure cameras to render different depth ranges to prevent duplicates
+    // Main camera renders world objects (depth 0-999)
+    this.camera.ignore(this.children.list.filter(child => (child as any).depth >= 1000));
+    
+    // UI camera renders UI elements (depth 1000+)
+    this.uiCamera.ignore(this.children.list.filter(child => (child as any).depth < 1000));
+    
+    console.log('📷 Camera rendering configured:');
+    console.log('  - Main camera: renders depths 0-999');
+    console.log('  - UI camera: renders depths 1000+');
   }
 
   override update(time: number, delta: number) {
@@ -373,34 +454,6 @@ export class GamePlay extends Scene {
     }
   }
 
-  private createBackToBuilderButton(): void {
-    this.backToBuilderButton = this.add.text(
-      this.cameras.main.width - 20,
-      20,
-      'Back to Builder',
-      {
-        ...ColorTheme.getTextStyle('small'),
-        backgroundColor: `#${ColorTheme.BUTTON_WARNING.toString(16).padStart(6, '0')}`,
-        padding: { x: 10, y: 5 }
-      }
-    ).setOrigin(1, 0).setScrollFactor(0).setDepth(1000).setInteractive();
-
-    this.backToBuilderButton.on('pointerdown', () => {
-      this.scene.start('LevelBuilder');
-    });
-
-    this.backToBuilderButton.on('pointerover', () => {
-      this.backToBuilderButton!.setStyle({ 
-        backgroundColor: `#${ColorTheme.BUTTON_WARNING_HOVER.toString(16).padStart(6, '0')}` 
-      });
-    });
-
-    this.backToBuilderButton.on('pointerout', () => {
-      this.backToBuilderButton!.setStyle({ 
-        backgroundColor: `#${ColorTheme.BUTTON_WARNING.toString(16).padStart(6, '0')}` 
-      });
-    });
-  }
 
   private showLevelInfo(levelData: LevelData): void {
     const infoText = this.add.text(
@@ -567,7 +620,7 @@ export class GamePlay extends Scene {
   }
 
   private setupPlayer(): void {
-    if (!this.levelData) return;
+    if (!this.levelData || !this.levelData.spawn) return;
 
     const spawnWorldPos = GridUtils.gridToWorldCenter(
       this.levelData.spawn.x, 
@@ -582,7 +635,9 @@ export class GamePlay extends Scene {
     this.player = new Player(this, spawnWorldPos.x, spawnWorldPos.y, this.customization);
     
     // Set physics world bounds based on level size
-    this.physics.world.setBounds(0, 0, this.levelWidth * GRID_SIZE, this.levelHeight * GRID_SIZE);
+    if (this.physics && this.physics.world) {
+      this.physics.world.setBounds(0, 0, this.levelWidth * GRID_SIZE, this.levelHeight * GRID_SIZE);
+    }
     
     // Set camera bounds to match world bounds
     this.camera.setBounds(0, 0, this.levelWidth * GRID_SIZE, this.levelHeight * GRID_SIZE);
@@ -852,9 +907,9 @@ export class GamePlay extends Scene {
       this.menuButton.destroy();
       this.menuButton = null;
     }
-    if (this.backToBuilderButton) {
-      this.backToBuilderButton.destroy();
-      this.backToBuilderButton = null;
+    if (this.backButton) {
+      this.backButton.destroy();
+      this.backButton = null;
     }
   }
 }

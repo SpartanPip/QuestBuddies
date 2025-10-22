@@ -80,21 +80,21 @@ export class MainMenu extends Scene {
           this.hasLevelData = true;
           this.showLevelInfo(result.levelData.metadata.name, result.levelData.metadata.author);
         } else {
-          // Invalid level data
+          // Invalid level data - use fallback
           console.warn('Invalid level data found:', validation.error);
-          this.hasLevelData = false;
-          this.showBuilderInfo();
+          this.hasLevelData = true; // Still allow playing with fallback level
+          this.showFallbackLevelInfo();
         }
       } else {
-        // No level data or load failed
-        console.log('No level data available:', result.message);
-        this.hasLevelData = false;
-        this.showBuilderInfo();
+        // No level data or load failed - use fallback level
+        console.log('No level data available, using fallback level:', result.message);
+        this.hasLevelData = true; // Allow playing with fallback level
+        this.showFallbackLevelInfo();
       }
     } catch (error) {
-      console.error('Error checking for level data:', error);
-      this.hasLevelData = false;
-      this.showBuilderInfo();
+      console.error('Error checking for level data, using fallback level:', error);
+      this.hasLevelData = true; // Allow playing with fallback level
+      this.showFallbackLevelInfo();
     } finally {
       this.levelCheckComplete = true;
       this.updateButtonStates();
@@ -103,6 +103,10 @@ export class MainMenu extends Scene {
 
   private showLevelInfo(_levelName: string, _author: string): void {
     // Title removed - level info no longer displayed in title
+  }
+
+  private showFallbackLevelInfo(): void {
+    // Title removed - fallback level info no longer displayed in title
   }
 
   private showBuilderInfo(): void {
@@ -289,22 +293,22 @@ export class MainMenu extends Scene {
     // Calculate vertical positioning with better spacing
     const startY = height * 0.6;
     
-    // Play button - start disabled with "NO LEVEL" text
+    // Play button - start with loading state
     this.playButton = new MenuButton(
       this,
       width / 2,
       startY,
-      'NO LEVEL',
+      'LOADING...',
       () => this.handlePlayButton(),
       {
-        ...ColorTheme.getButtonStyle('disabled'),
+        ...ColorTheme.getButtonStyle('primary'),
         width: buttonWidth,
         height: buttonHeight,
         fontSize: `${Math.floor(24 * scaleFactor)}px`
       },
       'ONE'
     );
-    this.playButton.setEnabled(false);
+    this.playButton.setEnabled(true);
     
     // Create loading spinner
     this.createLoadingSpinner(width / 2 + buttonWidth / 2 - 30, startY);
@@ -358,24 +362,15 @@ export class MainMenu extends Scene {
       // Remove loading spinner
       this.removeLoadingSpinner();
       
-      // Enable/disable play button based on level data availability
-      this.playButton.setEnabled(this.hasLevelData);
+      // Play button is always enabled now (either Reddit level or fallback)
+      this.playButton.setEnabled(true);
+      this.playButton.setText('PLAY');
       
-      if (!this.hasLevelData) {
-        this.playButton.setText('NO LEVEL');
-        // Update button style to indicate disabled state
-        this.playButton.setStyle({
-          backgroundColor: ColorTheme.BUTTON_DISABLED,
-          hoverBackgroundColor: ColorTheme.BUTTON_DISABLED
-        });
-      } else {
-        this.playButton.setText('PLAY');
-        // Restore normal button style
-        this.playButton.setStyle({
-          backgroundColor: ColorTheme.BUTTON_PRIMARY,
-          hoverBackgroundColor: ColorTheme.BUTTON_PRIMARY_HOVER
-        });
-      }
+      // Restore normal button style
+      this.playButton.setStyle({
+        backgroundColor: ColorTheme.BUTTON_PRIMARY,
+        hoverBackgroundColor: ColorTheme.BUTTON_PRIMARY_HOVER
+      });
     }
   }
   
@@ -397,7 +392,13 @@ export class MainMenu extends Scene {
         // Validate level data before starting game
         const validation = ApiUtils.validateLevelData(result.levelData);
         if (!validation.valid) {
-          this.showErrorMessage(`Invalid level data: ${validation.error}`);
+          // Use fallback level if validation fails
+          console.warn('Invalid level data, using fallback level:', validation.error);
+          const fallbackLevel = ApiUtils.createFallbackLevel();
+          this.scene.start('GamePlay', { 
+            levelData: fallbackLevel,
+            customization: this.customization
+          });
           return;
         }
         
@@ -407,11 +408,22 @@ export class MainMenu extends Scene {
           customization: this.customization
         });
       } else {
-        this.showErrorMessage(result.message || 'Level data not available');
+        // No level data available, use fallback level
+        console.log('No level data available, using fallback level:', result.message);
+        const fallbackLevel = ApiUtils.createFallbackLevel();
+        this.scene.start('GamePlay', { 
+          levelData: fallbackLevel,
+          customization: this.customization
+        });
       }
     } catch (error) {
-      console.error('Error starting game:', error);
-      this.showErrorMessage('Failed to load level. Please try again.');
+      console.error('Error starting game, using fallback level:', error);
+      // Use fallback level on error
+      const fallbackLevel = ApiUtils.createFallbackLevel();
+      this.scene.start('GamePlay', { 
+        levelData: fallbackLevel,
+        customization: this.customization
+      });
     } finally {
       // Button state will be updated in updateButtonStates()
     }
@@ -490,7 +502,7 @@ export class MainMenu extends Scene {
     // Update button text (maintain current state)
     if (this.playButton && this.levelCheckComplete) {
       // Only update if level check is complete, otherwise keep loading state
-      this.playButton.setText(this.hasLevelData ? 'PLAY' : 'NO LEVEL');
+      this.playButton.setText('PLAY');
     }
     if (this.buildButton) {
       this.buildButton.setText('BUILD LEVEL');

@@ -29,12 +29,18 @@ export class Enemy extends Phaser.GameObjects.Container {
     this.createHealthBar();
     
     scene.add.existing(this);
-    scene.physics.add.existing(this);
     
-    // Enable physics body
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(20, 20);
-    body.setCollideWorldBounds(true);
+    // Add physics body if physics system is available
+    if (scene.physics && scene.physics.add) {
+      scene.physics.add.existing(this);
+      
+      // Enable physics body
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        body.setSize(20, 20);
+        body.setCollideWorldBounds(true);
+      }
+    }
     
     // Set enemy data for identification
     this.setData('isEnemy', true);
@@ -250,7 +256,9 @@ export class Enemy extends Phaser.GameObjects.Container {
 
   private setVelocity(x: number, y: number): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setVelocity(x, y);
+    if (body) {
+      body.setVelocity(x, y);
+    }
   }
 
   takeDamage(damage: number): void {

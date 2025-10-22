@@ -31,12 +31,18 @@ export class Player extends Phaser.GameObjects.Container {
     this.createWeapon();
     
     scene.add.existing(this);
-    scene.physics.add.existing(this);
     
-    // Enable physics body
-    const body = this.body as Phaser.Physics.Arcade.Body;
-    body.setSize(24, 24);
-    body.setCollideWorldBounds(true);
+    // Add physics body if physics system is available
+    if (scene.physics && scene.physics.add) {
+      scene.physics.add.existing(this);
+      
+      // Enable physics body
+      const body = this.body as Phaser.Physics.Arcade.Body;
+      if (body) {
+        body.setSize(24, 24);
+        body.setCollideWorldBounds(true);
+      }
+    }
   }
 
   private createSprite(): void {
@@ -79,6 +85,8 @@ export class Player extends Phaser.GameObjects.Container {
 
   private handleMovement(): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
+    if (!body) return; // Exit if no physics body
+    
     let velocityX = 0;
     let velocityY = 0;
 

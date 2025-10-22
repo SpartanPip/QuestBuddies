@@ -9,6 +9,7 @@ export interface GridSelectionData {
   title: string;
   returnScene: string;
   returnData?: any;
+  cameraState?: { zoom: number; scrollX: number; scrollY: number };
 }
 
 export class GridSelectionScene extends Scene {
@@ -105,20 +106,22 @@ export class GridSelectionScene extends Scene {
     console.log('🔄 Returning to previous scene:', {
       returnScene: this.selectionData.returnScene,
       selectedData,
-      returnData: this.selectionData.returnData
+      returnData: this.selectionData.returnData,
+      cameraState: this.selectionData.cameraState
     });
     
     // Prepare return data
     const returnData = {
       ...this.selectionData.returnData,
-      selectedOption: selectedData
+      selectedOption: selectedData,
+      cameraState: this.selectionData.cameraState
     };
     
     // Start the return scene with the selection data
     this.scene.start(this.selectionData.returnScene, returnData);
   }
 
-  public update(): void {
+  public override update(): void {
     // Handle keyboard navigation
     if (this.input.keyboard) {
       const keyboard = this.input.keyboard;
