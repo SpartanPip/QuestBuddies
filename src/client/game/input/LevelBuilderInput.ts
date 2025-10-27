@@ -147,7 +147,7 @@ export class LevelBuilderInput {
   /**
    * Handles tile click events with proper priority checking
    */
-  handleTileClick(pointer: Phaser.Input.Pointer, gridX: number, gridY: number, tileSprite: Phaser.GameObjects.Image): void {
+  handleTileClick(pointer: Phaser.Input.Pointer, gridX: number, gridY: number, _tileSprite: Phaser.GameObjects.Image): void {
     console.log('🎯 Tile clicked:', { gridX, gridY, currentStage: this.callbacks.getCurrentStage() });
     
     // Don't handle clicks if dialog is open
@@ -172,11 +172,10 @@ export class LevelBuilderInput {
       return;
     }
 
-    // Only handle tile-specific placement in tiles stage
-    // For other stages, let the global handler deal with it
-    if (this.callbacks.getCurrentStage() === 'tiles') {
-      this.handlePlacement(pointer.worldX, pointer.worldY);
-    }
+    // Handle placement for all stages - handlePlacement will route to the correct method
+    console.log('🎯 Calling handlePlacement with world position:', { worldX: pointer.worldX, worldY: pointer.worldY });
+    this.handlePlacement(pointer.worldX, pointer.worldY);
+    console.log('🎯 handlePlacement call completed');
   }
 
   /**

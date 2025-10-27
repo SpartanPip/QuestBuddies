@@ -55,8 +55,9 @@ export class LevelBuilder extends Scene {
         this.handlePlacement(worldX, worldY);
       },
       onTileClick: (pointer: Phaser.Input.Pointer, gridX: number, gridY: number, tileSprite: Phaser.GameObjects.Image) => {
-        console.log('🖱️ Input callback - onTileClick:', { gridX, gridY });
-        this.handleTileClick(pointer, gridX, gridY, tileSprite);
+        console.log('🖱️ ⚠️ CALLBACK onTileClick called - This should NOT be called!', { gridX, gridY });
+        // Don't call this anymore - the input manager handles it directly
+        // this.handleTileClick(pointer, gridX, gridY, tileSprite);
       },
       onEntityClick: (pointer: Phaser.Input.Pointer, gridX: number, gridY: number, entityType: 'enemy' | 'spawn', entitySprite: Phaser.GameObjects.Image) => {
         console.log('🖱️ Input callback - onEntityClick:', { gridX, gridY, entityType });
@@ -1020,11 +1021,8 @@ export class LevelBuilder extends Scene {
       return;
     }
 
-    // Only handle tile-specific placement in tiles stage
-    // For other stages, let the global handler deal with it
-    if (this.currentStage === 'tiles') {
-      this.handlePlacement(pointer.worldX, pointer.worldY);
-    }
+    // Handle placement for all stages - handlePlacement will route to the correct method
+    this.handlePlacement(pointer.worldX, pointer.worldY);
   }
 
   private isPointerInUIArea(pointer: Phaser.Input.Pointer): boolean {
