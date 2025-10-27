@@ -1,7 +1,7 @@
 {
   "private": true,
   "name": "quest-buddies",
-  "version": "0.0.389949",
+  "version": "0.0.139487",
   "license": "BSD-3-Clause",
   "type": "module",
   "scripts": {

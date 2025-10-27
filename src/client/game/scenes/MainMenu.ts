@@ -1,8 +1,9 @@
 import { Scene, GameObjects } from 'phaser';
+import { LevelValidationService } from '../services';
 import { ApiUtils } from '../utils/ApiUtils';
 import { StorageUtils, CustomizationData } from '../utils/StorageUtils';
 import { MenuButton } from '../ui/MenuButton';
-import { ColorTheme } from '../utils/ColorTheme';
+import { MenuUI, MenuUICallbacks } from '../ui/managers/MenuUI';
 
 export class MainMenu extends Scene {
   background: GameObjects.Graphics | null = null;
@@ -10,22 +11,30 @@ export class MainMenu extends Scene {
   private levelCheckComplete: boolean = false;
   private hasLevelData: boolean = false;
   private customization: CustomizationData;
+  private levelValidationService: LevelValidationService;
   
-  // Menu buttons
-  private playButton: MenuButton | null = null;
-  private buildButton: MenuButton | null = null;
-  private customizeButton: MenuButton | null = null;
-  
-  // Loading indicator
-  private loadingSpinner: GameObjects.Graphics | null = null;
+  // UI elements - managed by MenuUI
   
   // Keyboard navigation
   private buttons: MenuButton[] = [];
   private currentButtonIndex: number = 0;
   private keyboardEnabled: boolean = false;
+  private uiManager: MenuUI;
 
   constructor() {
     super('MainMenu');
+  }
+
+  /**
+   * Initialize validation service asynchronously
+   */
+  private async initializeValidationService(): Promise<void> {
+    try {
+      const { LevelManager } = await import('../managers/LevelManager');
+      this.levelValidationService = new LevelValidationService(new LevelManager());
+    } catch (error) {
+      console.error('Failed to initialize validation service:', error);
+    }
   }
 
   /**
@@ -38,34 +47,40 @@ export class MainMenu extends Scene {
     this.logo = null;
     this.levelCheckComplete = false;
     this.hasLevelData = false;
+    this.customization = StorageUtils.loadCustomization();
     
-    // Destroy existing buttons
-    this.playButton?.destroy();
-    this.buildButton?.destroy();
-    this.customizeButton?.destroy();
-    this.playButton = null;
-    this.buildButton = null;
-    this.customizeButton = null;
-    
-    // Destroy loading spinner
-    this.loadingSpinner?.destroy();
-    this.loadingSpinner = null;
+    // Initialize validation service asynchronously
+    void this.initializeValidationService();
     
     // Load customization data
     this.customization = StorageUtils.loadCustomization();
   }
 
   create() {
-    this.refreshLayout();
+    // Initialize UI manager with callbacks
+    const uiCallbacks: MenuUICallbacks = {
+      onPlayButtonClick: () => {
+        void this.handlePlayButton();
+      },
+      onBuildButtonClick: () => {
+        this.handleBuildButton();
+      },
+      onCustomizeButtonClick: () => {
+        this.handleCustomizeButton();
+      }
+    };
+
+    this.uiManager = new MenuUI(this, uiCallbacks);
+    this.uiManager.createUI();
 
     // Re-calculate positions whenever the game canvas is resized (e.g. orientation change).
-    this.scale.on('resize', () => this.refreshLayout());
+    this.scale.on('resize', () => this.uiManager.createUI());
 
     // Setup keyboard navigation
     this.setupKeyboardNavigation();
 
     // Check for level data in Reddit post
-    this.checkForLevelData();
+    void this.checkForLevelData();
   }
 
   private async checkForLevelData(): Promise<void> {
@@ -74,14 +89,14 @@ export class MainMenu extends Scene {
       
       if (result.success && result.levelData) {
         // Validate level data
-        const validation = ApiUtils.validateLevelData(result.levelData);
-        if (validation.valid) {
+        const validation = this.levelValidationService.validateDataStructure(result.levelData);
+        if (validation.isValid) {
           // Valid level data found
           this.hasLevelData = true;
           this.showLevelInfo(result.levelData.metadata.name, result.levelData.metadata.author);
         } else {
           // Invalid level data - use fallback
-          console.warn('Invalid level data found:', validation.error);
+          console.warn('Invalid level data found:', validation.message);
           this.hasLevelData = true; // Still allow playing with fallback level
           this.showFallbackLevelInfo();
         }
@@ -109,9 +124,6 @@ export class MainMenu extends Scene {
     // Title removed - fallback level info no longer displayed in title
   }
 
-  private showBuilderInfo(): void {
-    // Title removed - no builder info to clear
-  }
 
   /**
    * Shows message when no level is available
@@ -120,75 +132,13 @@ export class MainMenu extends Scene {
     this.showTemporaryMessage('No level available for this post.\nTry building your own level!', 3000);
   }
 
-  /**
-   * Shows error message to user
-   */
-  private showErrorMessage(message: string): void {
-    this.showTemporaryMessage(`Error: ${message}`, 4000);
-  }
 
-  /**
-   * Creates a loading spinner next to the play button
-   */
-  private createLoadingSpinner(x: number, y: number): void {
-    this.loadingSpinner = this.add.graphics();
-    this.loadingSpinner.setPosition(x, y);
-    
-    // Create spinning circle
-    const radius = 12;
-    this.loadingSpinner.lineStyle(3, ColorTheme.PRIMARY_BLUE_LIGHT, 0.8);
-    this.loadingSpinner.beginPath();
-    this.loadingSpinner.arc(0, 0, radius, 0, Math.PI * 1.5);
-    this.loadingSpinner.strokePath();
-    
-    // Animate the spinner
-    this.tweens.add({
-      targets: this.loadingSpinner,
-      rotation: Math.PI * 2,
-      duration: 1000,
-      repeat: -1,
-      ease: 'Linear'
-    });
-  }
-
-  /**
-   * Removes the loading spinner
-   */
-  private removeLoadingSpinner(): void {
-    if (this.loadingSpinner) {
-      this.loadingSpinner.destroy();
-      this.loadingSpinner = null;
-    }
-  }
 
   /**
    * Shows a temporary message that fades out
    */
   private showTemporaryMessage(message: string, duration: number): void {
-    const { width, height } = this.scale;
-    
-    // Create message text
-    const messageText = this.add.text(width / 2, height * 0.8, message, {
-      fontSize: '20px',
-      color: ColorTheme.TEXT_PRIMARY,
-      fontFamily: 'Arial Black',
-      stroke: '#000000',
-      strokeThickness: 4,
-      align: 'center',
-      backgroundColor: `rgba(${(ColorTheme.ERROR >> 16) & 255}, ${(ColorTheme.ERROR >> 8) & 255}, ${ColorTheme.ERROR & 255}, 0.8)`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5);
-
-    // Fade out after duration
-    this.tweens.add({
-      targets: messageText,
-      alpha: 0,
-      duration: 1000,
-      delay: duration - 1000,
-      onComplete: () => {
-        messageText.destroy();
-      }
-    });
+    this.uiManager.showTemporaryMessage(message, duration);
   }
 
   /**
@@ -254,123 +204,18 @@ export class MainMenu extends Scene {
   /**
    * Animates buttons entrance for visual polish
    */
-  private animateButtonsEntrance(): void {
-    this.buttons.forEach((button, index) => {
-      if (button) {
-        // Start buttons off-screen to the right
-        const container = button.getContainer();
-        const originalX = container.x;
-        container.setX(originalX + 300);
-        container.setAlpha(0);
-        
-        // Animate them sliding in with staggered timing
-        this.tweens.add({
-          targets: container,
-          x: originalX,
-          alpha: 1,
-          duration: 600,
-          delay: index * 150,
-          ease: 'Back.easeOut'
-        });
-      }
-    });
-  }
 
   /**
    * Creates the three main menu buttons
    */
-  private createMenuButtons(): void {
-    const { width, height } = this.scale;
-    const scaleFactor = Math.min(width / 1024, height / 768);
-    
-    // Enhanced button dimensions for better touch targets
-    const minButtonWidth = 280;
-    const maxButtonWidth = 400;
-    const buttonWidth = Math.max(minButtonWidth, Math.min(maxButtonWidth, width * 0.7));
-    const buttonHeight = Math.max(60, Math.floor(70 * scaleFactor));
-    const buttonSpacing = Math.max(15, Math.floor(25 * scaleFactor));
-    
-    // Calculate vertical positioning with better spacing
-    const startY = height * 0.6;
-    
-    // Play button - start with loading state
-    this.playButton = new MenuButton(
-      this,
-      width / 2,
-      startY,
-      'LOADING...',
-      () => this.handlePlayButton(),
-      {
-        ...ColorTheme.getButtonStyle('primary'),
-        width: buttonWidth,
-        height: buttonHeight,
-        fontSize: `${Math.floor(24 * scaleFactor)}px`
-      },
-      'ONE'
-    );
-    this.playButton.setEnabled(true);
-    
-    // Create loading spinner
-    this.createLoadingSpinner(width / 2 + buttonWidth / 2 - 30, startY);
-    
-    // Build Level button with keyboard shortcut
-    this.buildButton = new MenuButton(
-      this,
-      width / 2,
-      startY + buttonHeight + buttonSpacing,
-      'BUILD LEVEL',
-      () => this.handleBuildButton(),
-      {
-        ...ColorTheme.getButtonStyle('success'),
-        width: buttonWidth,
-        height: buttonHeight,
-        fontSize: `${Math.floor(24 * scaleFactor)}px`
-      },
-      'TWO'
-    );
-    
-    // Customize button with keyboard shortcut
-    this.customizeButton = new MenuButton(
-      this,
-      width / 2,
-      startY + (buttonHeight + buttonSpacing) * 2,
-      'CUSTOMIZE',
-      () => this.handleCustomizeButton(),
-      {
-        ...ColorTheme.getButtonStyle('warning'),
-        width: buttonWidth,
-        height: buttonHeight,
-        fontSize: `${Math.floor(24 * scaleFactor)}px`
-      },
-      'THREE'
-    );
-    
-    // Store buttons for keyboard navigation
-    this.buttons = [this.playButton, this.buildButton, this.customizeButton].filter(button => button !== null) as MenuButton[];
-    
-    // Set initial focus for keyboard users
-    if (this.keyboardEnabled && this.buttons.length > 0 && this.buttons[0]) {
-      this.buttons[0].setFocus(true);
-    }
-  }
   
   /**
    * Updates button states based on available data
    */
   private updateButtonStates(): void {
-    if (this.playButton && this.levelCheckComplete) {
-      // Remove loading spinner
-      this.removeLoadingSpinner();
-      
-      // Play button is always enabled now (either Reddit level or fallback)
-      this.playButton.setEnabled(true);
-      this.playButton.setText('PLAY');
-      
-      // Restore normal button style
-      this.playButton.setStyle({
-        backgroundColor: ColorTheme.BUTTON_PRIMARY,
-        hoverBackgroundColor: ColorTheme.BUTTON_PRIMARY_HOVER
-      });
+    if (this.levelCheckComplete) {
+      // Update button states through UI manager
+      this.uiManager.updateButtonStates();
     }
   }
   
@@ -390,10 +235,10 @@ export class MainMenu extends Scene {
       
       if (result.success && result.levelData) {
         // Validate level data before starting game
-        const validation = ApiUtils.validateLevelData(result.levelData);
-        if (!validation.valid) {
+        const validation = this.levelValidationService.validateDataStructure(result.levelData);
+        if (!validation.isValid) {
           // Use fallback level if validation fails
-          console.warn('Invalid level data, using fallback level:', validation.error);
+          console.warn('Invalid level data, using fallback level:', validation.message);
           const fallbackLevel = ApiUtils.createFallbackLevel();
           this.scene.start('GamePlay', { 
             levelData: fallbackLevel,
@@ -429,17 +274,6 @@ export class MainMenu extends Scene {
     }
   }
 
-  /**
-   * Hides loading feedback
-   */
-  private hideLoadingFeedback(): void {
-    if (this.playButton && this.levelCheckComplete) {
-      this.updateButtonStates();
-    }
-    if (this.loadingSpinner) {
-      this.loadingSpinner.setVisible(false);
-    }
-  }
   
   /**
    * Handles Build Level button click
@@ -466,89 +300,7 @@ export class MainMenu extends Scene {
     });
   }
   
-  /**
-   * Positions buttons responsively based on screen size
-   */
-  private layoutButtons(): void {
-    if (this.buttons.length === 0) return;
-    
-    const { width, height } = this.scale;
-    const scaleFactor = Math.min(width / 1024, height / 768);
-    
-    // Enhanced button dimensions for better touch targets
-    const minButtonWidth = 280;
-    const maxButtonWidth = 400;
-    const buttonWidth = Math.max(minButtonWidth, Math.min(maxButtonWidth, width * 0.7));
-    const buttonHeight = Math.max(60, Math.floor(70 * scaleFactor));
-    const buttonSpacing = Math.max(15, Math.floor(25 * scaleFactor));
-    
-    // Calculate vertical positioning with better spacing
-    const startY = height * 0.6;
-    
-    // Update button positions and sizes
-    this.buttons.forEach((button, index) => {
-      if (button) {
-        button.setPosition(width / 2, startY + index * (buttonHeight + buttonSpacing));
-        
-        // Update button styles for responsive sizing
-        button.setStyle({
-          width: buttonWidth,
-          height: buttonHeight,
-          fontSize: `${Math.floor(24 * scaleFactor)}px`
-        });
-      }
-    });
-    
-    // Update button text (maintain current state)
-    if (this.playButton && this.levelCheckComplete) {
-      // Only update if level check is complete, otherwise keep loading state
-      this.playButton.setText('PLAY');
-    }
-    if (this.buildButton) {
-      this.buildButton.setText('BUILD LEVEL');
-    }
-    if (this.customizeButton) {
-      this.customizeButton.setText('CUSTOMIZE');
-    }
-  }
 
 
 
-  /**
-   * Positions and (lightly) scales all UI elements based on the current game size.
-   * Call this from create() and from any resize events.
-   */
-  private refreshLayout(): void {
-    const { width, height } = this.scale;
-
-    // Resize camera to new viewport to prevent black bars
-    this.cameras.resize(width, height);
-
-    // Background – use common gradient background
-    if (!this.background) {
-      this.background = ColorTheme.createMenuGradientBackground(this, width, height);
-    } else {
-      ColorTheme.updateMenuGradientBackground(this.background, width, height);
-    }
-
-    // Logo – keep aspect but scale down for very small screens
-    const scaleFactor = Math.min(width / 1024, height / 768);
-
-    if (!this.logo) {
-      this.logo = this.add.image(0, 0, 'logo');
-    }
-    this.logo!.setPosition(width / 2, height * 0.25).setScale(scaleFactor);
-
-    // Title removed - no longer showing "QuestBuddies" text
-    
-    // Create buttons if they don't exist
-    if (!this.playButton) {
-      this.createMenuButtons();
-      // Add entrance animation for buttons
-      this.animateButtonsEntrance();
-    } else {
-      // Layout existing buttons
-      this.layoutButtons();
-    }
-  }
 }

@@ -9,6 +9,7 @@ import { LevelManager } from '../managers/LevelManager';
 import { ApiUtils } from '../utils/ApiUtils';
 import { StorageUtils, CustomizationData } from '../utils/StorageUtils';
 import { ColorTheme } from '../utils/ColorTheme';
+import { GameplayUI, GameplayUICallbacks, LevelInfo } from '../ui/managers/GameplayUI';
 
 export class GamePlay extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
@@ -23,14 +24,10 @@ export class GamePlay extends Scene {
   private playerDamageCooldown: number = 1000; // 1 second cooldown
   private playerHealthBar: PlayerHealthBar | null = null;
   private levelManager: LevelManager;
-  private loadingText: Phaser.GameObjects.Text | null = null;
   private gameState: 'playing' | 'gameOver' | 'victory' = 'playing';
-  private gameStateText: Phaser.GameObjects.Text | null = null;
-  private restartButton: Phaser.GameObjects.Text | null = null;
-  private menuButton: Phaser.GameObjects.Text | null = null;
   private isTestMode: boolean = false;
-  private backButton: Phaser.GameObjects.Text | null = null;
   private customization: CustomizationData;
+  private uiManager: GameplayUI;
 
   constructor() {
     super('GamePlay');
@@ -58,89 +55,51 @@ export class GamePlay extends Scene {
       this.physics.world.setBounds(0, 0, 800, 600); // Temporary bounds
     }
 
-    // Create UI header with back button
-    this.createHeader();
+    // Initialize UI manager with callbacks
+    const uiCallbacks: GameplayUICallbacks = {
+      onBackClick: () => {
+        if (this.isTestMode) {
+          this.scene.start('LevelBuilder');
+        } else {
+          this.scene.start('MainMenu');
+        }
+      },
+      onRestartClick: () => {
+        this.restartLevel();
+      },
+      onMenuClick: () => {
+        if (this.isTestMode) {
+          this.scene.start('LevelBuilder');
+        } else {
+          this.scene.start('MainMenu');
+        }
+      },
+      onRetryClick: () => {
+        void this.loadLevelFromReddit();
+      }
+    };
+
+    this.uiManager = new GameplayUI(this, this.uiCamera, uiCallbacks, this.isTestMode);
+    this.uiManager.createUI();
 
     // Configure camera rendering
     this.configureCameraRendering();
 
-    // Create player health bar
-    this.playerHealthBar = new PlayerHealthBar(this);
-
     if (this.levelData) {
       this.setupLevel();
     } else {
-      this.loadLevelFromReddit();
+      void this.loadLevelFromReddit();
     }
   }
 
-  private createHeader(): void {
-    // Create header background using screen coordinates (not world coordinates)
-    const headerHeight = 60;
-    const headerBackground = this.add.rectangle(
-      this.uiCamera.width / 2,
-      headerHeight / 2,
-      this.uiCamera.width,
-      headerHeight,
-      ColorTheme.BACKGROUND_OVERLAY,
-      0.9
-    );
-    headerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    headerBackground.setScrollFactor(0, 0);
-    headerBackground.setDepth(1000);
-    headerBackground.setName('header_background');
-
-    // Create header container centered at top using screen coordinates
-    const header = this.add.container(this.uiCamera.width / 2, headerHeight / 2);
-    header.setName('header');
-
-    // Back button (positioned on the left)
-    const backButton = this.add.rectangle(-this.uiCamera.width / 2 + 50, 0, 80, 40, ColorTheme.BUTTON_SECONDARY)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
-      .setName('header_back_button');
-
-    const backLabel = this.add.text(-this.uiCamera.width / 2 + 50, 0, '← Back', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px'
-    }).setOrigin(0.5);
-
-    backButton.on('pointerdown', () => {
-      if (this.isTestMode) {
-        this.scene.start('LevelBuilder');
-      } else {
-        this.scene.start('MainMenu');
-      }
-    });
-
-    backButton.on('pointerover', () => {
-      backButton.setStrokeStyle(3, ColorTheme.SUCCESS);
-    });
-    backButton.on('pointerout', () => {
-      backButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    });
-
-    // Add back button to header
-    header.add([backButton, backLabel]);
-
-    header.setScrollFactor(0, 0);
-    header.setDepth(1001);
-
-    // Ensure all buttons in header have higher depth
-    header.list.forEach(child => {
-      if ('setDepth' in child) {
-        (child as any).setDepth(1002);
-      }
-    });
-  }
 
   private configureCameraRendering(): void {
     // Configure cameras to render different depth ranges to prevent duplicates
     // Main camera renders world objects (depth 0-999)
-    this.camera.ignore(this.children.list.filter(child => (child as any).depth >= 1000));
+    this.camera.ignore(this.children.list.filter(child => 'depth' in child && (child as unknown as { depth: number }).depth >= 1000));
     
     // UI camera renders UI elements (depth 1000+)
-    this.uiCamera.ignore(this.children.list.filter(child => (child as any).depth < 1000));
+    this.uiCamera.ignore(this.children.list.filter(child => 'depth' in child && (child as unknown as { depth: number }).depth < 1000));
     
     console.log('📷 Camera rendering configured:');
     console.log('  - Main camera: renders depths 0-999');
@@ -175,8 +134,8 @@ export class GamePlay extends Scene {
   }
 
   private updatePlayerHealthDisplay(): void {
-    if (this.player && this.playerHealthBar) {
-      this.playerHealthBar.updateHealth(this.player.getHealth(), this.player.getMaxHealth());
+    if (this.player && this.uiManager) {
+      this.uiManager.updatePlayerHealth(this.player.getHealth(), this.player.getMaxHealth());
     }
   }
 
@@ -347,21 +306,25 @@ export class GamePlay extends Scene {
 
   private async loadLevelFromReddit(): Promise<void> {
     // Show loading indicator
-    this.showLoadingIndicator('Loading level...');
+    this.uiManager.showLoadingIndicator('Loading level...');
 
     try {
       // Check network connectivity first
       const networkStatus = await ApiUtils.getNetworkStatus();
       if (!networkStatus.online) {
-        this.hideLoadingIndicator();
-        this.showErrorMessage(`Network Error: ${networkStatus.message}. Using fallback level.`);
+        this.uiManager.hideLoadingIndicator();
+        this.uiManager.showErrorMessage(`Network Error: ${networkStatus.message}. Using fallback level.`);
         
         // Load fallback level after a short delay
         this.time.delayedCall(2000, () => {
           const fallbackLevel = ApiUtils.createFallbackLevel();
           this.levelData = fallbackLevel;
           this.setupLevel();
-          this.showLevelInfo(fallbackLevel);
+          const levelInfo: LevelInfo = {
+            name: fallbackLevel.metadata.name,
+            author: fallbackLevel.metadata.author
+          };
+          this.uiManager.showLevelInfo(levelInfo);
         });
         return;
       }
@@ -370,210 +333,22 @@ export class GamePlay extends Scene {
       const levelData = await this.levelManager.loadLevelWithFallback();
       
       this.levelData = levelData;
-      this.hideLoadingIndicator();
+      this.uiManager.hideLoadingIndicator();
       this.setupLevel();
       
       // Show level info briefly
-      this.showLevelInfo(levelData);
+      const levelInfo: LevelInfo = {
+        name: levelData.metadata.name,
+        author: levelData.metadata.author
+      };
+      this.uiManager.showLevelInfo(levelInfo);
     } catch (error) {
       console.error('Failed to load level:', error);
-      this.hideLoadingIndicator();
-      this.showErrorMessage('Failed to load level. Please try again.');
+      this.uiManager.hideLoadingIndicator();
+      this.uiManager.showErrorMessage('Failed to load level. Please try again.');
     }
   }
 
-  private showLoadingIndicator(message: string): void {
-    // Create loading overlay
-    const overlayStyle = ColorTheme.getOverlayStyle(0.8);
-    const overlay = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      overlayStyle.color,
-      overlayStyle.alpha
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000);
-
-    // Loading text
-    this.loadingText = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 30,
-      message,
-      {
-        ...ColorTheme.getTextStyle('medium'),
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3001);
-
-    // Loading spinner/progress bar
-    const progressBar = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY + 20,
-      200,
-      8,
-      ColorTheme.SECONDARY_DARK
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3001);
-
-    const progressFill = this.add.rectangle(
-      this.cameras.main.centerX - 100,
-      this.cameras.main.centerY + 20,
-      0,
-      8,
-      ColorTheme.SUCCESS
-    ).setOrigin(0, 0.5).setScrollFactor(0).setDepth(3002);
-
-    // Animate progress bar
-    this.tweens.add({
-      targets: progressFill,
-      width: 200,
-      duration: 2000,
-      ease: 'Power2',
-      repeat: -1,
-      yoyo: true
-    });
-
-    // Store references for cleanup
-    this.loadingText.setData('overlay', overlay);
-    this.loadingText.setData('progressBar', progressBar);
-    this.loadingText.setData('progressFill', progressFill);
-  }
-
-  private hideLoadingIndicator(): void {
-    if (this.loadingText) {
-      // Clean up all loading UI elements
-      const overlay = this.loadingText.getData('overlay');
-      const progressBar = this.loadingText.getData('progressBar');
-      const progressFill = this.loadingText.getData('progressFill');
-
-      if (overlay) overlay.destroy();
-      if (progressBar) progressBar.destroy();
-      if (progressFill) progressFill.destroy();
-      
-      this.loadingText.destroy();
-      this.loadingText = null;
-    }
-  }
-
-
-  private showLevelInfo(levelData: LevelData): void {
-    const infoText = this.add.text(
-      20,
-      20,
-      `Level: ${levelData.metadata.name}\nBy: ${levelData.metadata.author}`,
-      {
-        ...ColorTheme.getTextStyle('small'),
-        backgroundColor: `rgba(${(ColorTheme.BACKGROUND_OVERLAY >> 16) & 255}, ${(ColorTheme.BACKGROUND_OVERLAY >> 8) & 255}, ${ColorTheme.BACKGROUND_OVERLAY & 255}, 0.7)`,
-        padding: { x: 10, y: 5 }
-      }
-    ).setDepth(1000);
-
-    // Auto-hide after 3 seconds
-    this.time.delayedCall(3000, () => {
-      if (infoText && infoText.active) {
-        this.tweens.add({
-          targets: infoText,
-          alpha: 0,
-          duration: 500,
-          onComplete: () => infoText.destroy()
-        });
-      }
-    });
-  }
-
-  private showErrorMessage(message: string): void {
-    // Create error overlay
-    const overlayStyle = ColorTheme.getOverlayStyle(0.8);
-    const overlay = this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      overlayStyle.color,
-      overlayStyle.alpha
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3000);
-
-    // Error icon (X)
-    const errorIcon = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 60,
-      '✖',
-      {
-        fontSize: '48px',
-        color: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3001);
-
-    // Error message
-    const errorText = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 10,
-      message,
-      {
-        fontSize: '18px',
-        color: ColorTheme.TEXT_PRIMARY,
-        backgroundColor: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`,
-        padding: { x: 20, y: 10 },
-        wordWrap: { width: 400 },
-        align: 'center'
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3001);
-
-    // Retry button
-    const retryButton = this.add.text(
-      this.cameras.main.centerX - 60,
-      this.cameras.main.centerY + 50,
-      'Retry',
-      {
-        ...ColorTheme.getTextStyle('small'),
-        backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-        padding: { x: 15, y: 8 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3001).setInteractive();
-
-    // Menu button
-    const menuButton = this.add.text(
-      this.cameras.main.centerX + 60,
-      this.cameras.main.centerY + 50,
-      this.isTestMode ? 'Back to Builder' : 'Menu',
-      {
-        ...ColorTheme.getTextStyle('small'),
-        backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-        padding: { x: 15, y: 8 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(3001).setInteractive();
-
-    // Button interactions
-    retryButton.on('pointerdown', () => {
-      overlay.destroy();
-      errorIcon.destroy();
-      errorText.destroy();
-      retryButton.destroy();
-      menuButton.destroy();
-      this.loadLevelFromReddit();
-    });
-
-    menuButton.on('pointerdown', () => {
-      if (this.isTestMode) {
-        this.scene.start('LevelBuilder');
-      } else {
-        this.scene.start('MainMenu');
-      }
-    });
-
-    // Hover effects
-    retryButton.on('pointerover', () => retryButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}` 
-    }));
-    retryButton.on('pointerout', () => retryButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}` 
-    }));
-    menuButton.on('pointerover', () => menuButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}` 
-    }));
-    menuButton.on('pointerout', () => menuButton.setStyle({ 
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}` 
-    }));
-  }
 
   private renderTilemap(): void {
     if (!this.levelData) return;
@@ -729,158 +504,19 @@ export class GamePlay extends Scene {
   }
 
   private showGameOver(): void {
-    // Create semi-transparent overlay
-    const overlayStyle = ColorTheme.getOverlayStyle(0.7);
-    this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      overlayStyle.color,
-      overlayStyle.alpha
-    ).setScrollFactor(0).setDepth(2000);
-
-    // Game over text
-    this.gameStateText = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 50,
-      'GAME OVER',
-      {
-        ...ColorTheme.getTextStyle('xlarge'),
-        color: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`,
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Restart button
-    this.restartButton = this.add.text(
-      this.cameras.main.centerX - 80,
-      this.cameras.main.centerY + 50,
-      'Restart',
-      {
-        ...ColorTheme.getTextStyle('medium'),
-        backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.restartButton.on('pointerdown', () => {
-      this.restartLevel();
-    });
-
-    // Menu/Back button
-    const menuButtonText = this.isTestMode ? 'Back to Builder' : 'Menu';
-    this.menuButton = this.add.text(
-      this.cameras.main.centerX + 80,
-      this.cameras.main.centerY + 50,
-      menuButtonText,
-      {
-        fontSize: '24px',
-        color: '#ffffff',
-        backgroundColor: '#333333',
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.menuButton.on('pointerdown', () => {
-      if (this.isTestMode) {
-        this.scene.start('LevelBuilder');
-      } else {
-        this.scene.start('MainMenu');
-      }
-    });
+    this.uiManager.showGameOver();
   }
 
   private showVictory(): void {
-    // Create semi-transparent overlay
-    const overlayStyle = ColorTheme.getOverlayStyle(0.7);
-    this.add.rectangle(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY,
-      this.cameras.main.width,
-      this.cameras.main.height,
-      overlayStyle.color,
-      overlayStyle.alpha
-    ).setScrollFactor(0).setDepth(2000);
-
-    // Victory text
-    this.gameStateText = this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 50,
-      'VICTORY!',
-      {
-        ...ColorTheme.getTextStyle('xlarge'),
-        color: `#${ColorTheme.SUCCESS.toString(16).padStart(6, '0')}`,
-        fontStyle: 'bold'
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Victory message
-    this.add.text(
-      this.cameras.main.centerX,
-      this.cameras.main.centerY - 10,
-      'All enemies defeated!',
-      {
-        ...ColorTheme.getTextStyle('medium')
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Restart button
-    this.restartButton = this.add.text(
-      this.cameras.main.centerX - 80,
-      this.cameras.main.centerY + 50,
-      'Play Again',
-      {
-        ...ColorTheme.getTextStyle('medium'),
-        backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.restartButton.on('pointerdown', () => {
-      this.restartLevel();
-    });
-
-    // Menu/Back button
-    const menuButtonText = this.isTestMode ? 'Back to Builder' : 'Menu';
-    this.menuButton = this.add.text(
-      this.cameras.main.centerX + 80,
-      this.cameras.main.centerY + 50,
-      menuButtonText,
-      {
-        fontSize: '24px',
-        color: '#ffffff',
-        backgroundColor: '#333333',
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.menuButton.on('pointerdown', () => {
-      if (this.isTestMode) {
-        this.scene.start('LevelBuilder');
-      } else {
-        this.scene.start('MainMenu');
-      }
-    });
+    this.uiManager.showVictory();
   }
 
   private restartLevel(): void {
     // Reset game state
     this.gameState = 'playing';
     
-    // Clear game state UI
-    if (this.gameStateText) {
-      this.gameStateText.destroy();
-      this.gameStateText = null;
-    }
-    if (this.restartButton) {
-      this.restartButton.destroy();
-      this.restartButton = null;
-    }
-    if (this.menuButton) {
-      this.menuButton.destroy();
-      this.menuButton = null;
-    }
+    // Clear game state UI through UI manager
+    this.uiManager.clearGameStateUI();
 
     // Reload the current level
     if (this.levelData) {
@@ -894,22 +530,7 @@ export class GamePlay extends Scene {
       this.playerHealthBar = null;
     }
     
-    // Clean up game state UI
-    if (this.gameStateText) {
-      this.gameStateText.destroy();
-      this.gameStateText = null;
-    }
-    if (this.restartButton) {
-      this.restartButton.destroy();
-      this.restartButton = null;
-    }
-    if (this.menuButton) {
-      this.menuButton.destroy();
-      this.menuButton = null;
-    }
-    if (this.backButton) {
-      this.backButton.destroy();
-      this.backButton = null;
-    }
+    // Clean up UI through UI manager
+    this.uiManager.destroy();
   }
 }

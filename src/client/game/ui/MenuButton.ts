@@ -183,7 +183,8 @@ export class MenuButton {
 
   public setEnabled(enabled: boolean): void {
     this.enabled = enabled;
-    if (this.background && this.text && this.container) {
+    // Only update visual state if the button is still valid and not destroyed
+    if (this.background && this.text && this.container && this.scene && this.scene.scene && this.scene.scene.isActive()) {
       this.updateVisualState();
     }
   }
@@ -193,6 +194,11 @@ export class MenuButton {
   }
 
   public setText(newText: string): void {
+    if (!this.text || !this.background || !this.container || !this.scene) {
+      console.warn('MenuButton: Cannot set text - objects destroyed');
+      return;
+    }
+    
     this.text.setText(newText);
     
     // Recalculate optimal font size for new text
@@ -252,6 +258,11 @@ export class MenuButton {
   }
 
   public setStyle(newStyle: Partial<ButtonStyle>): void {
+    if (!this.background || !this.text || !this.container || !this.scene) {
+      console.warn('MenuButton: Cannot set style - objects destroyed');
+      return;
+    }
+    
     this.style = { ...this.style, ...newStyle };
     
     // Update background
@@ -278,38 +289,49 @@ export class MenuButton {
   }
 
   private updateVisualState(): void {
-    if (!this.background || !this.text) {
-      console.warn('MenuButton: Background or text not initialized');
+    // Safety checks - don't update if objects are destroyed or scene is inactive
+    if (!this.background || !this.text || !this.container || !this.scene || !this.scene.scene.isActive()) {
+      console.warn('MenuButton: Cannot update visual state - objects destroyed or scene inactive');
       return;
     }
 
-    if (this.enabled) {
-      this.background.setFillStyle(this.style.backgroundColor!);
-      if (this.style.textColor) {
-        this.text.setColor(this.style.textColor);
-      }
-      this.container.setAlpha(1.0);
-      if (this.container.input) {
-        this.container.input.enabled = true;
-      }
-      
-      // Add focus indicator
-      if (this.focused) {
-        this.background.setStrokeStyle(4, ColorTheme.BORDER_FOCUS); // Yellow focus border
+    // Check if the container is still in the scene
+    if (!this.container.scene) {
+      console.warn('MenuButton: Container is not in a scene');
+      return;
+    }
+
+    try {
+      if (this.enabled) {
+        this.background.setFillStyle(this.style.backgroundColor!);
+        if (this.style.textColor) {
+          this.text.setColor(this.style.textColor);
+        }
+        this.container.setAlpha(1.0);
+        if (this.container.input) {
+          this.container.input.enabled = true;
+        }
+        
+        // Add focus indicator
+        if (this.focused) {
+          this.background.setStrokeStyle(4, ColorTheme.BORDER_FOCUS); // Yellow focus border
+        } else {
+          this.background.setStrokeStyle(this.style.borderWidth!, this.style.borderColor);
+        }
       } else {
+        this.background.setFillStyle(this.style.disabledBackgroundColor!);
+        if (this.style.disabledTextColor) {
+          this.text.setColor(this.style.disabledTextColor);
+        }
+        this.container.setAlpha(0.6);
+        if (this.container.input) {
+          this.container.input.enabled = false;
+        }
+        this.container.setScale(1.0); // Reset scale when disabled
         this.background.setStrokeStyle(this.style.borderWidth!, this.style.borderColor);
       }
-    } else {
-      this.background.setFillStyle(this.style.disabledBackgroundColor!);
-      if (this.style.disabledTextColor) {
-        this.text.setColor(this.style.disabledTextColor);
-      }
-      this.container.setAlpha(0.6);
-      if (this.container.input) {
-        this.container.input.enabled = false;
-      }
-      this.container.setScale(1.0); // Reset scale when disabled
-      this.background.setStrokeStyle(this.style.borderWidth!, this.style.borderColor);
+    } catch (error) {
+      console.warn('MenuButton: Error updating visual state:', error);
     }
   }
 

@@ -6,7 +6,9 @@ import { LevelManager } from '../managers/LevelManager';
 import { StorageUtils, CustomizationData } from '../utils/StorageUtils';
 import { ColorTheme } from '../utils/ColorTheme';
 import { OptionElementData } from '../ui/OptionElement';
-import { LevelValidationHelper } from '../utils/LevelValidationHelper';
+import { LevelValidationService } from '../services';
+import { LevelBuilderUI, LevelBuilderUICallbacks, StageInfo } from '../ui/managers/LevelBuilderUI';
+import { LevelBuilderInput, LevelBuilderInputCallbacks } from '../input/LevelBuilderInput';
 
 export class LevelBuilder extends Scene {
   private camera: Phaser.Cameras.Scene2D.Camera;
@@ -25,12 +27,75 @@ export class LevelBuilder extends Scene {
     ENTITIES: 200     // Enemies and spawn points
   };
   
-  private selectedTileType: number = TILE_TYPES.WALL;
-  // private isDragging: boolean = false; // Removed - no longer needed with individual click handlers
-  private placementMode: 'tile' | 'enemy' | 'spawn' = 'tile';
+  private setupInputManager(): void {
+    console.log('🖱️ === SETUP INPUT MANAGER START ===');
+    console.log('🖱️ Current stage:', this.currentStage);
+    console.log('🖱️ UI manager exists:', !!this.uiManager);
+    console.log('🖱️ Selected tile sprite:', this.selectedTileSprite);
+    
+    // Create input manager with callbacks
+    const inputCallbacks: LevelBuilderInputCallbacks = {
+      onTilePlacement: (worldX: number, worldY: number) => {
+        console.log('🎯 ========================================');
+        console.log('🎯 STEP 2: INPUT CALLBACK - onTilePlacement');
+        console.log('🎯 ========================================');
+        console.log('🖱️ Input callback - onTilePlacement:', { worldX, worldY });
+        console.log('🎯 Current stage:', this.currentStage);
+        console.log('🎯 Level data exists:', !!this.levelData);
+        console.log('🎯 Calling handlePlacement...');
+        this.handlePlacement(worldX, worldY);
+        console.log('🎯 === HANDLE PLACEMENT CALLED ===');
+      },
+      onEnemyPlacement: (worldX: number, worldY: number) => {
+        console.log('🖱️ Input callback - onEnemyPlacement:', { worldX, worldY });
+        this.handlePlacement(worldX, worldY);
+      },
+      onSpawnPlacement: (worldX: number, worldY: number) => {
+        console.log('🖱️ Input callback - onSpawnPlacement:', { worldX, worldY });
+        this.handlePlacement(worldX, worldY);
+      },
+      onTileClick: (pointer: Phaser.Input.Pointer, gridX: number, gridY: number, tileSprite: Phaser.GameObjects.Image) => {
+        console.log('🖱️ Input callback - onTileClick:', { gridX, gridY });
+        this.handleTileClick(pointer, gridX, gridY, tileSprite);
+      },
+      onEntityClick: (pointer: Phaser.Input.Pointer, gridX: number, gridY: number, entityType: 'enemy' | 'spawn', entitySprite: Phaser.GameObjects.Image) => {
+        console.log('🖱️ Input callback - onEntityClick:', { gridX, gridY, entityType });
+        this.handleEntityClick(pointer, gridX, gridY, entityType, entitySprite);
+      },
+      onBackgroundClick: (pointer: Phaser.Input.Pointer) => {
+        console.log('🖱️ Input callback - onBackgroundClick:', { worldX: pointer.worldX, worldY: pointer.worldY });
+        this.handlePlacement(pointer.worldX, pointer.worldY);
+      },
+      isDialogOpen: () => {
+        const isOpen = this.uiManager?.isDialogOpen() || false;
+        console.log('🖱️ Input callback - isDialogOpen:', isOpen);
+        return isOpen;
+      },
+      getCurrentStage: () => {
+        console.log('🖱️ Input callback - getCurrentStage:', this.currentStage);
+        return this.currentStage;
+      },
+      isPointerInUIArea: (pointer: Phaser.Input.Pointer) => {
+        const inUIArea = this.isPointerInUIArea(pointer);
+        console.log('🖱️ Input callback - isPointerInUIArea:', inUIArea);
+        return inUIArea;
+      }
+    };
+
+    console.log('🖱️ Creating LevelBuilderInput...');
+    this.inputManager = new LevelBuilderInput(this, inputCallbacks);
+    console.log('🖱️ Input manager created:', !!this.inputManager);
+    
+    // Enable input handling
+    this.inputManager.enableInput();
+    console.log('🖱️ Input enabled');
+    
+    console.log('🖱️ === SETUP INPUT MANAGER END ===');
+  }
+
+  private currentStage: 'tiles' | 'enemies' | 'spawn' = 'tiles';
   private selectedEnemyType: number = ENEMY_TYPES.BASIC;
   private selectedTileSprite: string = 'tile-dirt1';
-  private isDialogOpen: boolean = false;
 
   // Camera state persistence
   private cameraState: {
@@ -38,9 +103,6 @@ export class LevelBuilder extends Scene {
     scrollX: number;
     scrollY: number;
   } | null = null;
-
-
-
 
   // Tile options data
   private static readonly TILE_OPTIONS = [
@@ -72,59 +134,78 @@ export class LevelBuilder extends Scene {
     { type: ENEMY_TYPES.FAST, label: 'Bug 2', color: 0x66FF66, sprite: 'enemy-bug2', scale: 0.25, tint: 0xff6600 },
     { type: ENEMY_TYPES.HEAVY, label: 'Bug 3', color: 0x6666FF, sprite: 'enemy-bug3', scale: 0.35, tint: 0x660066 }
   ];
+
   private levelManager: LevelManager;
-  private validationHelper: LevelValidationHelper;
+  private levelValidationService: LevelValidationService;
   private autosaveTimer: number | null = null;
   private customization: CustomizationData;
+  private uiManager: LevelBuilderUI;
+  private inputManager: LevelBuilderInput;
+  
 
   constructor() {
     super('LevelBuilder');
     this.levelManager = new LevelManager();
-    this.validationHelper = new LevelValidationHelper(this.levelManager);
+    this.levelValidationService = new LevelValidationService(this.levelManager);
   }
 
   create() {
     try {
-      console.log('🎮 LevelBuilder: Starting scene creation');
+      console.log('🎮 === LEVELBUILDER SCENE CREATION START ===');
 
+      console.log('🎮 Step 1: Setting up cameras');
       this.camera = this.cameras.main;
       this.camera.setBackgroundColor(ColorTheme.BACKGROUND_DARK);
 
       // Create UI camera for elements that should not be affected by zoom/pan
       this.uiCamera = this.cameras.add(0, 0, this.camera.width, this.camera.height);
       this.uiCamera.setZoom(1.0);           // Never zoom
+      console.log('🎮 Cameras setup complete');
 
+      console.log('🎮 Step 2: Loading customization data');
       // Ensure customization is loaded if not already set
       if (!this.customization) {
         console.log('🎨 Loading customization data');
         this.customization = StorageUtils.loadCustomization();
       }
+      console.log('🎨 Customization loaded:', !!this.customization);
 
-      console.log('📊 Initializing level data');
+      console.log('🎮 Step 3: Initializing level data');
       this.initializeLevelData();
 
-      console.log('🎯 Setting up grid');
+      console.log('🎮 Step 4: Setting up grid');
       this.setupGrid();
 
-      console.log('🖱️ Setting up input');
-      this.setupInput();
-
-      console.log('🎨 Setting up UI');
+      console.log('🎮 Step 5: Setting up UI');
       this.setupUI();
 
-      console.log('📷 Configuring camera rendering');
+      console.log('🎮 Step 6: Setting up input manager');
+      this.setupInputManager();
+
+      console.log('🎮 Step 7: Configuring camera rendering');
       this.configureCameraRendering();
 
-      console.log('📷 Restoring camera state if available');
+      console.log('🎮 Step 8: Restoring camera state if available');
       this.restoreCameraState();
 
-      console.log('💾 Setting up autosave');
+      console.log('🎮 Step 9: Setting up autosave');
       this.setupAutosave();
 
+      console.log('🎮 Step 10: Adding test tile');
       // Test tile rendering - add a test tile to verify sprites are working
       this.addTestTile();
 
-      console.log('✅ LevelBuilder: Scene creation complete');
+      console.log('🎮 === LEVELBUILDER SCENE CREATION COMPLETE ===');
+      console.log('🎮 Final state check:', {
+        hasLevelData: !!this.levelData,
+        currentStage: this.currentStage,
+        selectedTileSprite: this.selectedTileSprite,
+        hasUI: !!this.uiManager,
+        hasInput: !!this.inputManager,
+        hasBackgroundLayer: !!this.backgroundLayer,
+        hasTileLayer: !!this.tileLayer,
+        hasEntityLayer: !!this.entityLayer
+      });
     } catch (error) {
       console.error('❌ LevelBuilder: Error during scene creation:', error);
       // Try to show an error message to the user
@@ -133,16 +214,20 @@ export class LevelBuilder extends Scene {
   }
 
   private initializeLevelData(): void {
+    console.log('📊 === INITIALIZE LEVEL DATA START ===');
     try {
       // Check for backup first (this includes state saved during navigation)
       const backup = StorageUtils.loadFromLocalStorage();
+      console.log('📊 Backup data found:', !!backup);
+      
       if (backup) {
         console.log('🔄 Found persistent level data, restoring state');
         console.log('📊 Level data preview:', {
           name: backup.metadata?.name,
           tilesCount: backup.tiles?.length,
           enemiesCount: backup.enemies?.length,
-          hasSpawn: !!backup.spawn
+          hasSpawn: !!backup.spawn,
+          hasTileSprites: !!backup.tileSprites
         });
 
         try {
@@ -157,13 +242,33 @@ export class LevelBuilder extends Scene {
         this.levelData = this.levelManager.createNewLevel('New Level', 'Player');
       }
 
+      console.log('📊 Level data after creation/restoration:', {
+        hasLevelData: !!this.levelData,
+        tilesLength: this.levelData?.tiles?.length,
+        tileSpritesLength: this.levelData?.tileSprites?.length,
+        firstRowLength: this.levelData?.tiles?.[0]?.length,
+        firstSpriteRowLength: this.levelData?.tileSprites?.[0]?.length
+      });
+
       // Ensure tileSprites array exists for backward compatibility
       if (!this.levelData.tileSprites) {
         console.log('🔧 Adding missing tileSprites array for backward compatibility');
         this.levelData.tileSprites = this.levelData.tiles.map(row =>
           row.map(() => null)
         );
+        console.log('🔧 TileSprites array created:', {
+          length: this.levelData.tileSprites.length,
+          firstRowLength: this.levelData.tileSprites[0]?.length
+        });
       }
+
+      console.log('📊 Final level data structure:', {
+        tiles: this.levelData.tiles?.length,
+        tileSprites: this.levelData.tileSprites?.length,
+        enemies: this.levelData.enemies?.length,
+        spawn: !!this.levelData.spawn,
+        metadata: this.levelData.metadata
+      });
 
       console.log('✅ Level data initialized successfully');
     } catch (error) {
@@ -176,6 +281,7 @@ export class LevelBuilder extends Scene {
       // Show user-friendly message
       this.showMessage('Previous level data was corrupted. Started with a new level.', 0xAAAA44, 4000);
     }
+    console.log('📊 === INITIALIZE LEVEL DATA END ===');
   }
 
   private setupGrid(): void {
@@ -225,12 +331,16 @@ export class LevelBuilder extends Scene {
   }
 
   private drawGrid(): void {
+    console.log('🎨 Creating grid graphics...');
+    
     // Create grid graphics on the background layer
     const gridGraphics = this.add.graphics();
     gridGraphics.lineStyle(1, 0x555555, 0.5);
 
     const levelPixelWidth = DEFAULT_LEVEL_SIZE * GRID_SIZE;
     const levelPixelHeight = DEFAULT_LEVEL_SIZE * GRID_SIZE;
+    
+    console.log('🎨 Level dimensions:', { levelPixelWidth, levelPixelHeight });
 
     // Draw vertical lines
     for (let x = 0; x <= levelPixelWidth; x += GRID_SIZE) {
@@ -246,23 +356,650 @@ export class LevelBuilder extends Scene {
 
     gridGraphics.strokePath();
     
+    console.log('🎨 Grid lines drawn, adding to background layer...');
+    
     // Add grid to background layer
     this.backgroundLayer.add(gridGraphics);
+    
+    console.log('🎨 Grid added to background layer');
+    console.log('🎨 Setting up interactive hit area...');
+    
+    // Make the background interactive for tile placement when global handler is disabled
+    // CRITICAL: Graphics objects need an explicit hit area to be clickable
+    gridGraphics.setInteractive(
+      new Phaser.Geom.Rectangle(0, 0, levelPixelWidth, levelPixelHeight),
+      Phaser.Geom.Rectangle.Contains
+    );
+    
+    console.log('✅ Grid is now interactive with hit area:', { 
+      width: levelPixelWidth, 
+      height: levelPixelHeight 
+    });
+    
+    console.log('🎨 Setting up pointer event listeners...');
+    
+    gridGraphics.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      console.log('🎯 ========================================');
+      console.log('🎯 STEP 1: BACKGROUND GRID CLICKED');
+      console.log('🎯 ========================================');
+      console.log('🎯 Pointer world position:', { worldX: pointer.worldX, worldY: pointer.worldY });
+      console.log('🎯 Pointer screen position:', { x: pointer.x, y: pointer.y });
+      console.log('🎯 Current stage:', this.currentStage);
+      console.log('🎯 UI manager exists:', !!this.uiManager);
+      console.log('🎯 Dialog open:', this.uiManager?.isDialogOpen());
+      console.log('🎯 Input manager exists:', !!this.inputManager);
+      console.log('🎯 Calling inputManager.handleBackgroundClick...');
+      if (this.inputManager) {
+        this.inputManager.handleBackgroundClick(pointer);
+      } else {
+        console.error('❌ Input manager is null or undefined');
+      }
+      console.log('🎯 === BACKGROUND GRID CLICK HANDLED ===');
+      console.log('🎯 ========================================');
+    });
+    
+    console.log('✅ Grid event listeners set up');
   }
 
-  private setupInput(): void {
-    // Add global click handler for empty areas (tile placement)
-    this.input.on('pointerdown', this.onGlobalPointerDown, this);
 
-    // Enhanced camera controls for navigating large levels
-    this.setupCameraControls();
+
+
+  private setupUI(): void {
+    // Initialize UI manager with callbacks
+    const uiCallbacks: LevelBuilderUICallbacks = {
+      onBackClick: () => {
+        this.saveCurrentState();
+        this.scene.start('MainMenu');
+      },
+      onStageButtonClick: () => {
+        this.handleStageButtonClick();
+      },
+      onNextButtonClick: () => {
+        this.handleNextButton();
+      },
+      onClearButtonClick: () => {
+        this.clearLevel();
+      }
+    };
+
+    this.uiManager = new LevelBuilderUI(this, this.uiCamera, uiCallbacks);
+    this.uiManager.createUI();
   }
 
-  private onGlobalPointerDown(pointer: Phaser.Input.Pointer): void {
-    console.log('🖱️ Global pointer down:', { x: pointer.x, y: pointer.y, worldX: pointer.worldX, worldY: pointer.worldY });
+  private configureCameraRendering(): void {
+    // Configure cameras to render different depth ranges to prevent duplicates
+    // Main camera renders world objects (depth 0-999)
+    this.camera.ignore(this.children.list.filter(child => (child as Phaser.GameObjects.GameObject & { depth: number }).depth >= 1000));
+    
+    // UI camera renders UI elements (depth 1000+)
+    this.uiCamera.ignore(this.children.list.filter(child => (child as Phaser.GameObjects.GameObject & { depth: number }).depth < 1000));
+    
+    console.log('📷 Camera rendering configured:');
+    console.log('  - Main camera: renders depths 0-999');
+    console.log('  - UI camera: renders depths 1000+');
+    console.log('  - Layer depths: Background(0), Tiles(100), Entities(200)');
+  }
+
+  /**
+   * Gets the color for the current stage button
+   */
+  private getStageColor(): number {
+    switch (this.currentStage) {
+      case 'tiles':
+        return 0x4444AA;
+      case 'enemies':
+        return 0xAA4444;
+      case 'spawn':
+        return 0x44AA44;
+      default:
+        return 0x4444AA;
+    }
+  }
+
+  /**
+   * Gets the label for the current stage button
+   */
+  private getStageLabel(): string {
+    switch (this.currentStage) {
+      case 'tiles':
+        return 'Tiles';
+      case 'enemies':
+        return 'Enemies';
+      case 'spawn':
+        return 'Spawn';
+      default:
+        return 'Tiles';
+    }
+  }
+
+  /**
+   * Gets the instructions text for the current stage
+   */
+  private getInstructionsText(): string {
+    switch (this.currentStage) {
+      case 'tiles':
+        return 'WASD: Move Camera\nClick: Place/Remove Tiles\nScroll: Zoom';
+      case 'enemies':
+        return 'WASD: Move Camera\nClick: Place/Remove Enemies\nScroll: Zoom';
+      case 'spawn':
+        return 'WASD: Move Camera\nClick: Place/Remove Spawn Point\nScroll: Zoom';
+      default:
+        return 'WASD: Move Camera\nClick: Place/Remove Tiles\nScroll: Zoom';
+    }
+  }
+
+  /**
+   * Gets the color for the next button
+   */
+  private getNextButtonColor(): number {
+    return this.currentStage === 'spawn' ? ColorTheme.BUTTON_SUCCESS : ColorTheme.BUTTON_PRIMARY;
+  }
+
+  /**
+   * Gets the label for the next button
+   */
+  private getNextButtonLabel(): string {
+    return this.currentStage === 'spawn' ? 'Post' : 'Next';
+  }
+
+  /**
+   * Handles the next button click
+   */
+  private handleNextButton(): void {
+    if (this.currentStage === 'spawn') {
+      // This is the final stage, so post the level
+      void this.saveAndPost();
+    } else {
+      // Move to next stage
+      this.advanceToNextStage();
+    }
+  }
+
+  /**
+   * Advances to the next stage
+   */
+  private advanceToNextStage(): void {
+    switch (this.currentStage) {
+      case 'tiles':
+        this.currentStage = 'enemies';
+        break;
+      case 'enemies':
+        this.currentStage = 'spawn';
+        break;
+      case 'spawn':
+        // This shouldn't happen as the button becomes "Post" on spawn stage
+        break;
+    }
+    
+    this.updateStageDisplay();
+    this.showMessage(`Now placing ${this.getStageLabel().toLowerCase()}`, 0x44AA44, 2000);
+  }
+
+  /**
+   * Handles stage button click to open selection popup
+   */
+  private handleStageButtonClick(): void {
+    console.log('🎯 handleStageButtonClick called with currentStage:', this.currentStage);
+    if (this.currentStage === 'tiles') {
+      console.log('🎯 Calling showTileSelectionPopup');
+      this.showTileSelectionPopup();
+    } else if (this.currentStage === 'enemies') {
+      console.log('🎯 Calling showEnemySelectionPopup');
+      this.showEnemySelectionPopup();
+    }
+    // Spawn stage doesn't need selection popup
+  }
+
+  /**
+   * Shows tile selection popup
+   */
+  private showTileSelectionPopup(): void {
+    console.log('🚀 === SHOWING TILE SELECTION ===');
+
+    // Save current state before navigating away
+    this.saveCurrentState();
+    this.saveCameraState();
+
+    // Prepare tile options
+    const tileOptions: OptionElementData[] = LevelBuilder.TILE_OPTIONS.map(tile => ({
+      id: tile.sprite,
+      sprite: tile.sprite,
+      label: tile.label,
+      data: { sprite: tile.sprite, type: TILE_TYPES.WALL }
+    }));
+
+    console.log('🎯 Prepared tile options:', tileOptions.length);
+
+    // Navigate to GridSelectionScene
+    try {
+      console.log('🎯 Starting GridSelectionScene...');
+      this.scene.start('GridSelectionScene', {
+        options: tileOptions,
+        title: 'Select Tile Type',
+        returnScene: 'LevelBuilder',
+        returnData: { customization: this.customization },
+        cameraState: this.cameraState
+      });
+      console.log('✅ GridSelectionScene started successfully');
+    } catch (error) {
+      console.error('❌ Failed to start GridSelectionScene:', error);
+    }
+
+    console.log('🎯 Navigated to GridSelectionScene for tile selection');
+  }
+
+  /**
+   * Shows enemy selection popup
+   */
+  private showEnemySelectionPopup(): void {
+    console.log('🚀 === SHOWING ENEMY SELECTION ===');
+
+    // Save current state before navigating away
+    this.saveCurrentState();
+    this.saveCameraState();
+
+    // Prepare enemy options
+    const enemyOptions: OptionElementData[] = LevelBuilder.ENEMY_OPTIONS.map(enemy => ({
+      id: enemy.type.toString(),
+      sprite: enemy.sprite,
+      label: enemy.label,
+      data: { type: enemy.type, sprite: enemy.sprite, scale: enemy.scale, tint: enemy.tint }
+    }));
+
+    // Navigate to GridSelectionScene
+    this.scene.start('GridSelectionScene', {
+      options: enemyOptions,
+      title: 'Select Enemy Type',
+      returnScene: 'LevelBuilder',
+      returnData: { customization: this.customization },
+      cameraState: this.cameraState
+    });
+
+    console.log('🎯 Navigated to GridSelectionScene for enemy selection');
+  }
+
+  /**
+   * Handles selection from GridSelectionScene
+   */
+  private handleGridSelection(selectedOption: OptionElementData): void {
+    console.log('✅ Handling grid selection:', selectedOption);
+
+    const data = selectedOption.data as Record<string, unknown>;
+
+    // Check if this is an enemy selection (has scale property)
+    if (data.type !== undefined && data.scale !== undefined) {
+      // This is an enemy selection
+      this.selectedEnemyType = data.type as number;
+      console.log('👾 Enemy selection updated:', { type: this.selectedEnemyType });
+    } else if (data.sprite && data.type !== undefined) {
+      // This is a tile selection (has sprite and type, but no scale)
+      this.selectedTileSprite = data.sprite as string;
+      console.log('🎨 Tile selection updated:', { sprite: this.selectedTileSprite });
+    }
+  }
+
+  /**
+   * Saves the current camera state (zoom and position) for persistence across scene transitions
+   */
+  private saveCameraState(): void {
+    if (this.camera) {
+      this.cameraState = {
+        zoom: this.camera.zoom,
+        scrollX: this.camera.scrollX,
+        scrollY: this.camera.scrollY
+      };
+      console.log('📷 Camera state saved:', this.cameraState);
+    }
+  }
+
+  /**
+   * Updates the stage display (header button, instructions, footer button)
+   */
+  private updateStageDisplay(): void {
+    const stageInfo: StageInfo = {
+      currentStage: this.currentStage,
+      stageColor: this.getStageColor(),
+      stageLabel: this.getStageLabel(),
+      instructionsText: this.getInstructionsText(),
+      nextButtonColor: this.getNextButtonColor(),
+      nextButtonLabel: this.getNextButtonLabel()
+    };
+
+    this.uiManager.updateStageDisplay(stageInfo);
+  }
+
+  private handlePlacement(worldX: number, worldY: number): void {
+    console.log('🎯 ========================================');
+    console.log('🎯 STEP 3: HANDLE PLACEMENT');
+    console.log('🎯 ========================================');
+    console.log('🎯 Current stage:', this.currentStage);
+    console.log('🎯 World position:', { worldX, worldY });
+    console.log('🎯 Level data exists:', !!this.levelData);
+    console.log('🎯 Selected tile sprite:', this.selectedTileSprite);
+    console.log('🎯 UI manager exists:', !!this.uiManager);
+    console.log('🎯 Dialog open:', this.uiManager?.isDialogOpen());
+    
+    console.log('🎯 Determining stage action...');
+    switch (this.currentStage) {
+      case 'tiles':
+        console.log('🎯 Stage is TILES - calling placeTile...');
+        this.placeTile(worldX, worldY);
+        console.log('🎯 placeTile call completed');
+        break;
+      case 'enemies':
+        console.log('🎯 Stage is ENEMIES - calling placeEnemy...');
+        this.placeEnemy(worldX, worldY);
+        break;
+      case 'spawn':
+        console.log('🎯 Stage is SPAWN - calling placeSpawn...');
+        this.placeSpawn(worldX, worldY);
+        break;
+    }
+    console.log('🎯 === HANDLE PLACEMENT END ===');
+    console.log('🎯 ========================================');
+  }
+
+  private placeTile(worldX: number, worldY: number): void {
+    console.log('🎯 ========================================');
+    console.log('🎯 STEP 4: PLACE TILE');
+    console.log('🎯 ========================================');
+    console.log('🎯 Level data exists:', !!this.levelData);
+    
+    if (!this.levelData) {
+      console.error('❌ No level data available for tile placement');
+      console.log('🎯 ========================================');
+      return;
+    }
+
+    const gridPos = GridUtils.worldToGrid(worldX, worldY);
+    
+    console.log(`🎯 World position: (${worldX}, ${worldY})`);
+    console.log(`🎯 Grid position: (${gridPos.x}, ${gridPos.y})`);
+    console.log(`🎨 Selected tile sprite: ${this.selectedTileSprite}`);
+    console.log(`🎯 Current stage: ${this.currentStage}`);
+    console.log(`🎯 Level size: ${DEFAULT_LEVEL_SIZE}x${DEFAULT_LEVEL_SIZE}`);
+
+    const isValidPosition = GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE);
+    console.log(`🎯 Grid position valid: ${isValidPosition}`);
+
+    if (isValidPosition) {
+      console.log('🎯 Grid position is VALID - continuing...');
+      const row = this.levelData.tiles[gridPos.y];
+      const spriteRow = this.levelData.tileSprites[gridPos.y];
+      
+      console.log(`🎯 Row exists: ${!!row}`);
+      console.log(`🎯 SpriteRow exists: ${!!spriteRow}`);
+      console.log(`🎯 Row length: ${row?.length}`);
+      console.log(`🎯 SpriteRow length: ${spriteRow?.length}`);
+      
+      if (row && spriteRow) {
+        const currentTileType = row[gridPos.x];
+        const currentSprite = spriteRow[gridPos.x];
+        
+        console.log(`🎯 Current tile type: ${currentTileType}`);
+        console.log(`🎯 Current sprite: ${currentSprite}`);
+        console.log(`🎯 TILE_TYPES.EMPTY: ${TILE_TYPES.EMPTY}`);
+        
+        // Check if there's already a tile at this position
+        if (currentTileType !== undefined && currentTileType !== TILE_TYPES.EMPTY) {
+          console.log(`🎯 Tile already exists at (${gridPos.x}, ${gridPos.y})`);
+          
+          // Check if there are any entities (enemies or spawn) at this position
+          const hasEnemy = this.levelData.enemies.some(enemy => enemy.x === gridPos.x && enemy.y === gridPos.y);
+          const hasSpawn = this.levelData.spawn && this.levelData.spawn.x === gridPos.x && this.levelData.spawn.y === gridPos.y;
+          
+          console.log(`🎯 Has enemy at position: ${hasEnemy}`);
+          console.log(`🎯 Has spawn at position: ${hasSpawn}`);
+          
+          if (hasEnemy || hasSpawn) {
+            // Don't remove tile if there are entities on top
+            console.log(`⚠️ Cannot remove tile at (${gridPos.x}, ${gridPos.y}) - entities present`);
+            this.showMessage('Cannot remove tile with entities on top', 0xAA4444, 2000);
+            return;
+          } else {
+            // Remove the existing tile (toggle off)
+            console.log(`🗑️ Removing tile at (${gridPos.x}, ${gridPos.y})`);
+            row[gridPos.x] = TILE_TYPES.EMPTY;
+            spriteRow[gridPos.x] = null;
+            console.log(`🗑️ Tile data after removal:`, {
+              tileType: row[gridPos.x],
+              tileSprite: spriteRow[gridPos.x]
+            });
+            this.renderTileAt(gridPos.x, gridPos.y);
+            this.updateLevelManager();
+            return;
+          }
+        } else {
+          // Place new tile (toggle on)
+          console.log(`✅ Placing new tile at (${gridPos.x}, ${gridPos.y})`);
+          row[gridPos.x] = 1; // Generic "tile exists" marker
+          spriteRow[gridPos.x] = this.selectedTileSprite; // Store the selected sprite
+          
+          console.log(`✅ Tile data after placement:`, {
+            tileType: row[gridPos.x],
+            tileSprite: spriteRow[gridPos.x],
+            gridPos: { x: gridPos.x, y: gridPos.y }
+          });
+          
+          console.log(`🎨 Calling renderTileAt for (${gridPos.x}, ${gridPos.y})`);
+          this.renderTileAt(gridPos.x, gridPos.y);
+          console.log(`💾 Calling updateLevelManager`);
+          this.updateLevelManager();
+        }
+      } else {
+        console.error(`❌ Invalid row or spriteRow at grid position (${gridPos.x}, ${gridPos.y})`);
+        console.error(`❌ Row:`, row);
+        console.error(`❌ SpriteRow:`, spriteRow);
+      }
+    } else {
+      console.warn(`⚠️ Invalid grid position (${gridPos.x}, ${gridPos.y})`);
+      console.warn(`⚠️ Valid range: 0-${DEFAULT_LEVEL_SIZE-1}`);
+      console.log('🎯 ========================================');
+      console.log('❌ STEP 4 FAILED: Invalid grid position');
+      console.log('🎯 ========================================');
+    }
+    console.log('🎯 === PLACE TILE END ===');
+    console.log('🎯 ========================================');
+  }
+
+  private renderTileAt(gridX: number, gridY: number): void {
+    console.log('🎨 ========================================');
+    console.log('🎨 STEP 5: RENDER TILE AT');
+    console.log('🎨 ========================================');
+    console.log('🎨 Grid position:', { gridX, gridY });
+    console.log('🎨 Level data exists:', !!this.levelData);
+    
+    if (!this.levelData) {
+      console.error('❌ No level data available for tile rendering');
+      console.log('🎨 ========================================');
+      console.log('❌ STEP 5 FAILED: No level data');
+      console.log('🎨 ========================================');
+      return;
+    }
+
+    const worldPos = GridUtils.gridToWorld(gridX, gridY);
+    console.log('🎨 World position:', worldPos);
+    
+    const row = this.levelData.tiles[gridY];
+    const spriteRow = this.levelData.tileSprites[gridY];
+    
+    console.log('🎨 Row exists:', !!row);
+    console.log('🎨 SpriteRow exists:', !!spriteRow);
+    
+    if (!row || !spriteRow) {
+      console.error('❌ Row or spriteRow missing at grid position:', { gridX, gridY });
+      console.log('🎨 ========================================');
+      console.log('❌ STEP 5 FAILED: Missing row or spriteRow');
+      console.log('🎨 ========================================');
+      return;
+    }
+
+    const tileType = row[gridX];
+    const tileSprite = spriteRow[gridX];
+    const tileKey = `tile_${gridX}_${gridY}`;
+
+    console.log('🎨 Tile type:', tileType);
+    console.log('🎨 Tile sprite:', tileSprite);
+    console.log('🎨 Tile key:', tileKey);
+    console.log('🎨 TILE_TYPES.EMPTY:', TILE_TYPES.EMPTY);
+
+    // Remove existing tile at this position from the tile layer
+    const existingTile = this.tileLayer.getByName(tileKey);
+    console.log('🎨 Existing tile found:', !!existingTile);
+    
+    if (existingTile) {
+      console.log('🗑️ Destroying existing tile:', tileKey);
+      existingTile.destroy();
+      console.log('✅ Existing tile destroyed');
+    }
+
+    // Add new tile if not empty
+    if (tileType !== undefined && tileType !== TILE_TYPES.EMPTY) {
+      console.log('🎨 Creating new tile sprite...');
+      const tileSpriteObj = this.createTileSprite(tileType, worldPos.x, worldPos.y, gridX, gridY, tileSprite);
+      
+      if (tileSpriteObj) {
+        console.log('✅ STEP 5 SUCCESS: Tile sprite created successfully:', {
+          name: tileSpriteObj.name,
+          position: { x: tileSpriteObj.x, y: tileSpriteObj.y },
+          visible: tileSpriteObj.visible,
+          alpha: tileSpriteObj.alpha,
+          scale: { x: tileSpriteObj.scaleX, y: tileSpriteObj.scaleY }
+        });
+        tileSpriteObj.setName(tileKey);
+        console.log('🎨 ========================================');
+        console.log('✅ STEP 5 COMPLETE');
+        console.log('🎨 ========================================');
+      } else {
+        console.error('❌ Failed to create tile sprite');
+        console.log('🎨 ========================================');
+        console.log('❌ STEP 5 FAILED: createTileSprite returned null');
+        console.log('🎨 ========================================');
+      }
+    } else {
+      console.log('🎨 No tile to render (empty position)');
+      console.log('🎨 ========================================');
+      console.log('⚠️ STEP 5: Empty position, nothing to render');
+      console.log('🎨 ========================================');
+    }
+    console.log('🎨 === RENDER TILE AT END ===');
+  }
+
+  private createTileSprite(_tileType: number, x: number, y: number, gridX: number, gridY: number, storedSprite?: string | null): Phaser.GameObjects.Image | null {
+    console.log('🎨 ========================================');
+    console.log('🎨 STEP 6: CREATE TILE SPRITE');
+    console.log('🎨 ========================================');
+    console.log('🎨 Parameters:', { _tileType, x, y, gridX, gridY, storedSprite });
+    
+    // Use stored sprite if available, otherwise use the selected tile sprite
+    const spriteKey = storedSprite || this.selectedTileSprite;
+    console.log('🎨 Sprite key:', spriteKey);
+    console.log('🎨 Selected tile sprite:', this.selectedTileSprite);
+
+    if (!spriteKey) {
+      console.error('❌ No sprite key available for tile');
+      console.log('🎨 ========================================');
+      console.log('❌ STEP 6 FAILED: No sprite key');
+      console.log('🎨 ========================================');
+      return null;
+    }
+
+    console.log('🎨 Checking if sprite exists in texture manager...');
+    const textureExists = this.textures.exists(spriteKey);
+    console.log('🎨 Texture exists:', textureExists);
+    
+    if (!textureExists) {
+      console.error('❌ Sprite texture does not exist:', spriteKey);
+      console.log('🎨 Available textures:', Object.keys(this.textures.list));
+      console.log('🎨 ========================================');
+      console.log('❌ STEP 6 FAILED: Texture does not exist');
+      console.log('🎨 ========================================');
+      return null;
+    }
+    
+    console.log('✅ Texture exists for:', spriteKey);
+
+    const finalX = x + GRID_SIZE / 2;
+    const finalY = y + GRID_SIZE / 2;
+    console.log('🎨 Final sprite position:', { finalX, finalY });
+    console.log('🎨 GRID_SIZE:', GRID_SIZE);
+
+    // Create tile sprite directly in the tile layer
+    console.log('🎨 Creating sprite with scene.add.image...');
+    const tileSprite = this.tileLayer.scene.add.image(finalX, finalY, spriteKey);
+    
+    console.log('🎨 Sprite created, setting display size...');
+    tileSprite.setDisplaySize(GRID_SIZE, GRID_SIZE);
+    console.log('✅ Display size set to', GRID_SIZE, 'x', GRID_SIZE);
+    
+    console.log('🎨 Making tile interactive...');
+    // Make tile interactive and clickable
+    tileSprite.setInteractive();
+    console.log('✅ Tile is now interactive');
+    
+    console.log('🎨 Setting tile data...');
+    // Store grid position in userData for easy access
+    tileSprite.setData('gridX', gridX);
+    tileSprite.setData('gridY', gridY);
+    tileSprite.setData('tileType', _tileType);
+    tileSprite.setData('spriteKey', spriteKey);
+    console.log('✅ Tile data set');
+    
+    console.log('🎨 Adding click handler...');
+    // Add click handler for tile interaction
+    tileSprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.inputManager) {
+        this.inputManager.handleTileClick(pointer, gridX, gridY, tileSprite);
+      }
+    });
+    console.log('✅ Click handler added');
+    
+    console.log('🎨 Adding hover effects...');
+    // Add hover effects
+    tileSprite.on('pointerover', () => {
+      if (!this.uiManager.isDialogOpen()) {
+        tileSprite.setAlpha(0.8);
+      }
+    });
+    
+    tileSprite.on('pointerout', () => {
+      tileSprite.setAlpha(1.0);
+    });
+    console.log('✅ Hover effects added');
+    
+    console.log('🎨 Adding tile to tile layer...');
+    console.log('🎨 Tile layer depth:', this.tileLayer.depth);
+    console.log('🎨 Tile layer children count before add:', this.tileLayer.length);
+    
+    // Add tile to the tile layer
+    this.tileLayer.add(tileSprite);
+    
+    console.log('✅ Tile added to layer');
+    console.log('🎨 Tile layer children count after add:', this.tileLayer.length);
+    console.log('🎨 Final sprite properties:', {
+      name: tileSprite.name,
+      position: { x: tileSprite.x, y: tileSprite.y },
+      visible: tileSprite.visible,
+      alpha: tileSprite.alpha,
+      scale: { x: tileSprite.scaleX, y: tileSprite.scaleY },
+      depth: tileSprite.depth,
+      texture: tileSprite.texture.key
+    });
+
+    console.log('🎨 ========================================');
+    console.log('✅ STEP 6 COMPLETE: Tile sprite created and added to layer');
+    console.log('🎨 ========================================');
+    return tileSprite;
+  }
+
+  /**
+   * Handles tile click events with proper priority checking
+   */
+  private handleTileClick(pointer: Phaser.Input.Pointer, gridX: number, gridY: number, _tileSprite: Phaser.GameObjects.Image): void {
+    console.log('🎯 Tile clicked:', { gridX, gridY, currentStage: this.currentStage });
     
     // Don't handle clicks if dialog is open
-    if (this.isDialogOpen) {
+    if (this.uiManager.isDialogOpen()) {
       console.log('❌ Blocked: Dialog is open');
       return;
     }
@@ -283,241 +1020,12 @@ export class LevelBuilder extends Scene {
       return;
     }
 
-    // Handle placement based on current mode
-    console.log('✅ Processing placement for mode:', this.placementMode);
-    this.handlePlacement(pointer.worldX, pointer.worldY);
-  }
-
-  private setupCameraControls(): void {
-    const cameraSpeed = 8;
-    const levelPixelWidth = DEFAULT_LEVEL_SIZE * GRID_SIZE;
-    const levelPixelHeight = DEFAULT_LEVEL_SIZE * GRID_SIZE;
-
-    // Set camera bounds to prevent scrolling beyond level
-    this.camera.setBounds(0, 0, levelPixelWidth, levelPixelHeight);
-
-    console.log('📷 Camera setup:', {
-      bounds: { x: 0, y: 0, width: levelPixelWidth, height: levelPixelHeight },
-      cameraSize: { width: this.camera.width, height: this.camera.height },
-      initialPosition: { x: this.camera.scrollX, y: this.camera.scrollY },
-      initialZoom: this.camera.zoom
-    });
-
-    if (this.input.keyboard) {
-      // Smooth camera movement with bounds checking
-
-      this.input.keyboard.on('keydown', (event: KeyboardEvent) => {
-        switch (event.code) {
-          case 'KeyW':
-          case 'ArrowUp':
-            this.camera.scrollY = Math.max(0, this.camera.scrollY - cameraSpeed);
-            break;
-          case 'KeyS':
-          case 'ArrowDown':
-            this.camera.scrollY = Math.min(levelPixelHeight - this.camera.height, this.camera.scrollY + cameraSpeed);
-            break;
-          case 'KeyA':
-          case 'ArrowLeft':
-            this.camera.scrollX = Math.max(0, this.camera.scrollX - cameraSpeed);
-            break;
-          case 'KeyD':
-          case 'ArrowRight':
-            this.camera.scrollX = Math.min(levelPixelWidth - this.camera.width, this.camera.scrollX + cameraSpeed);
-            break;
-        }
-      });
-    }
-
-    // Mouse wheel zoom (optional enhancement) - only affects world camera, UI camera stays fixed
-    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
-      const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Phaser.Math.Clamp(this.camera.zoom * zoomFactor, 0.5, 2);
-      this.camera.setZoom(newZoom);
-      // UI camera remains unaffected at zoom 1.0
-    });
-  }
-
-  private setupUI(): void {
-    this.createHeader();
-    this.createSaveToolbar();
-  }
-
-  private configureCameraRendering(): void {
-    // Configure cameras to render different depth ranges to prevent duplicates
-    // Main camera renders world objects (depth 0-999)
-    this.camera.ignore(this.children.list.filter(child => (child as Phaser.GameObjects.GameObject & { depth: number }).depth >= 1000));
-    
-    // UI camera renders UI elements (depth 1000+)
-    this.uiCamera.ignore(this.children.list.filter(child => (child as Phaser.GameObjects.GameObject & { depth: number }).depth < 1000));
-    
-    console.log('📷 Camera rendering configured:');
-    console.log('  - Main camera: renders depths 0-999');
-    console.log('  - UI camera: renders depths 1000+');
-    console.log('  - Layer depths: Background(0), Tiles(100), Entities(200)');
-  }
-
-  private createHeader(): void {
-    // Create header background using screen coordinates (not world coordinates)
-    const headerHeight = 60;
-    const headerBackground = this.add.rectangle(
-      this.uiCamera.width / 2,
-      headerHeight / 2,
-      this.uiCamera.width,
-      headerHeight,
-      ColorTheme.BACKGROUND_OVERLAY,
-      0.9
-    );
-    headerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    headerBackground.setScrollFactor(0, 0);
-    headerBackground.setDepth(1000);
-    headerBackground.setName('header_background');
-
-    // Create header container centered at top using screen coordinates
-    const header = this.add.container(this.uiCamera.width / 2, headerHeight / 2);
-    header.setName('header');
-
-    // Calculate available space and button dimensions
-    const availableWidth = this.uiCamera.width - 40; // 20px margin on each side
-    const buttonHeight = 40;
-    const buttonSpacing = 10;
-    const backButtonWidth = 50; // Smaller for just arrow
-    const modeButtonWidth = Math.floor((availableWidth - backButtonWidth - buttonSpacing) / 3); // Distribute remaining space among 3 mode buttons
-
-    // Back button (positioned on the left)
-    const backButton = this.add.rectangle(-availableWidth / 2 + backButtonWidth / 2 + 20, 0, backButtonWidth, buttonHeight, ColorTheme.BUTTON_SECONDARY)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
-      .setName('header_back_button');
-
-    const backLabel = this.add.text(-availableWidth / 2 + backButtonWidth / 2 + 20, 0, '←', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '18px',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    backButton.on('pointerdown', () => {
-      // Save current state before returning to main menu
-      this.saveCurrentState();
-      this.scene.start('MainMenu');
-    });
-
-    backButton.on('pointerover', () => backButton.setStrokeStyle(3, ColorTheme.SUCCESS));
-    backButton.on('pointerout', () => backButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
-
-    // Mode selection buttons
-    const modes = [
-      { mode: 'tile', color: 0x4444AA, label: 'Tiles' },
-      { mode: 'enemy', color: 0xAA4444, label: 'Enemies' },
-      { mode: 'spawn', color: 0x44AA44, label: 'Spawn' }
-    ];
-
-    modes.forEach((modeData, index) => {
-      const x = -availableWidth / 2 + backButtonWidth + buttonSpacing + (index * (modeButtonWidth + buttonSpacing)) + modeButtonWidth / 2;
-
-      const button = this.add.rectangle(x, 0, modeButtonWidth, buttonHeight, modeData.color)
-        .setInteractive()
-        .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
-        .setName(`header_${modeData.mode}_button`);
-
-      const label = this.add.text(x, 0, modeData.label, {
-        ...ColorTheme.getTextStyle('small'),
-        fontSize: '12px'
-      }).setOrigin(0.5);
-
-      button.on('pointerdown', () => {
-        if (modeData.mode === 'tile') {
-          this.showTileSelectionPopup();
-        } else if (modeData.mode === 'enemy') {
-          this.showEnemySelectionPopup();
-        } else {
-          this.placementMode = modeData.mode as 'tile' | 'enemy' | 'spawn';
-          this.updateModeSelection();
-        }
-      });
-
-      button.on('pointerover', () => button.setStrokeStyle(3, ColorTheme.SUCCESS));
-      button.on('pointerout', () => {
-        const isSelected = this.placementMode === modeData.mode;
-        button.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
-      });
-
-      header.add([button, label]);
-    });
-
-    // Add back button to header
-    header.add([backButton, backLabel]);
-
-
-
-    // Instructions text positioned below header using screen coordinates
-    const instructions = this.add.text(20, headerHeight + 20, 'WASD: Move Camera\nClick: Place Tiles\nScroll: Zoom', {
-      ...ColorTheme.getTextStyle('small', 'secondary'),
-      fontSize: '12px'
-    });
-    instructions.setScrollFactor(0, 0);
-    instructions.setDepth(1001);
-    instructions.setName('instructions');
-
-    header.setScrollFactor(0, 0);
-    header.setDepth(1001);
-
-    // Ensure all buttons in header have higher depth
-    header.list.forEach(child => {
-      if (child && 'setDepth' in child) {
-        (child as Phaser.GameObjects.GameObject & { setDepth: (depth: number) => void }).setDepth(1002);
-      }
-    });
-
-    this.updateModeSelection();
-  }
-
-  private disableSceneInput(): void {
-    console.log('🚫 DISABLING scene input events');
-    // Reset any ongoing operations
-    this.disableCameraZoom();
-  }
-
-  private enableSceneInput(): void {
-    console.log('✅ ENABLING scene input events');
-    this.enableCameraZoom();
-  }
-
-  private disableCameraZoom(): void {
-    // Remove camera zoom wheel event
-    this.input.off('wheel');
-  }
-
-  private enableCameraZoom(): void {
-    // Re-add camera zoom wheel event - only affects world camera, UI camera stays fixed
-    this.input.on('wheel', (_pointer: Phaser.Input.Pointer, _gameObjects: Phaser.GameObjects.GameObject[], _deltaX: number, deltaY: number) => {
-      const zoomFactor = deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Phaser.Math.Clamp(this.camera.zoom * zoomFactor, 0.5, 2);
-      this.camera.setZoom(newZoom);
-      // UI camera remains unaffected at zoom 1.0
-    });
-  }
-
-
-  private updateModeSelection(): void {
-    const header = this.children.getByName('header') as Phaser.GameObjects.Container;
-
-    if (header && header.list) {
-      const modes = ['tile', 'enemy', 'spawn'];
-      header.list.forEach((child, index) => {
-        if (child instanceof Phaser.GameObjects.Rectangle && index < 6) { // 6 because we have button + label pairs
-          const modeIndex = Math.floor(index / 2); // Each mode has button + label
-          if (index % 2 === 0) { // Only update buttons (even indices)
-            const isSelected = modes[modeIndex] === this.placementMode;
-            child.setStrokeStyle(isSelected ? 3 : 2, isSelected ? ColorTheme.SUCCESS : ColorTheme.BORDER_PRIMARY);
-          }
-        }
-      });
+    // Only handle tile-specific placement in tiles stage
+    // For other stages, let the global handler deal with it
+    if (this.currentStage === 'tiles') {
+      this.handlePlacement(pointer.worldX, pointer.worldY);
     }
   }
-
-
-
-  // Old input handling methods removed - now using individual object click handlers
 
   private isPointerInUIArea(pointer: Phaser.Input.Pointer): boolean {
     const headerHeight = 60;
@@ -544,309 +1052,15 @@ export class LevelBuilder extends Scene {
     return false;
   }
 
-  // onPointerUp method removed - no longer needed with individual click handlers
-
-  private handlePlacement(worldX: number, worldY: number): void {
-    console.log('🎯 PLACING:', this.placementMode, 'at world position:', { worldX, worldY });
-    switch (this.placementMode) {
-      case 'tile':
-        this.placeTile(worldX, worldY);
-        break;
-      case 'enemy':
-        this.placeEnemy(worldX, worldY);
-        break;
-      case 'spawn':
-        this.placeSpawn(worldX, worldY);
-        break;
-    }
-  }
-
-  private placeTile(worldX: number, worldY: number): void {
-    if (!this.levelData) return;
-
-    const gridPos = GridUtils.worldToGrid(worldX, worldY);
-    
-    console.log(`🎯 Placing tile at world position (${worldX}, ${worldY}) -> grid (${gridPos.x}, ${gridPos.y})`);
-    console.log(`🎨 Selected tile sprite: ${this.selectedTileSprite}`);
-    console.log(`🎯 Placement mode: ${this.placementMode}`);
-
-    if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
-      const row = this.levelData.tiles[gridPos.y];
-      const spriteRow = this.levelData.tileSprites[gridPos.y];
-      if (row && spriteRow) {
-        const currentTileType = row[gridPos.x];
-        
-        // Check if there's already a tile at this position
-        if (currentTileType !== undefined && currentTileType !== TILE_TYPES.EMPTY) {
-          // Check if there are any entities (enemies or spawn) at this position
-          const hasEnemy = this.levelData.enemies.some(enemy => enemy.x === gridPos.x && enemy.y === gridPos.y);
-          const hasSpawn = this.levelData.spawn && this.levelData.spawn.x === gridPos.x && this.levelData.spawn.y === gridPos.y;
-          
-          if (hasEnemy || hasSpawn) {
-            // Don't remove tile if there are entities on top
-            console.log(`⚠️ Cannot remove tile at (${gridPos.x}, ${gridPos.y}) - entities present`);
-            this.showMessage('Cannot remove tile with entities on top', 0xAA4444, 2000);
-            return;
-          } else {
-            // Remove the existing tile (toggle off)
-            console.log(`🗑️ Removing tile at (${gridPos.x}, ${gridPos.y})`);
-            row[gridPos.x] = TILE_TYPES.EMPTY;
-            spriteRow[gridPos.x] = null;
-            this.renderTileAt(gridPos.x, gridPos.y);
-            this.updateLevelManager();
-            return;
-          }
-        } else {
-          // Place new tile (toggle on)
-          console.log(`✅ Placing new tile at (${gridPos.x}, ${gridPos.y})`);
-          row[gridPos.x] = 1; // Generic "tile exists" marker
-          spriteRow[gridPos.x] = this.selectedTileSprite; // Store the selected sprite
-          
-          console.log(`✅ Tile data updated:`, {
-            tileType: row[gridPos.x],
-            tileSprite: spriteRow[gridPos.x],
-            gridPos: { x: gridPos.x, y: gridPos.y }
-          });
-          
-          this.renderTileAt(gridPos.x, gridPos.y);
-          this.updateLevelManager();
-        }
-      } else {
-        console.error(`❌ Invalid row or spriteRow at grid position (${gridPos.x}, ${gridPos.y})`);
-      }
-    } else {
-      console.warn(`⚠️ Invalid grid position (${gridPos.x}, ${gridPos.y})`);
-    }
-  }
-
-  private renderTileAt(gridX: number, gridY: number): void {
-    if (!this.levelData) return;
-
-    const worldPos = GridUtils.gridToWorld(gridX, gridY);
-    const row = this.levelData.tiles[gridY];
-    const spriteRow = this.levelData.tileSprites[gridY];
-    if (!row || !spriteRow) return;
-
-    const tileType = row[gridX];
-    const tileSprite = spriteRow[gridX];
-    const tileKey = `tile_${gridX}_${gridY}`;
-
-    // Remove existing tile at this position from the tile layer
-    const existingTile = this.tileLayer.getByName(tileKey);
-    if (existingTile) {
-      existingTile.destroy();
-    }
-
-    // Add new tile if not empty
-    if (tileType !== undefined && tileType !== TILE_TYPES.EMPTY) {
-      const tileSpriteObj = this.createTileSprite(tileType, worldPos.x, worldPos.y, gridX, gridY, tileSprite);
-      if (tileSpriteObj) {
-        tileSpriteObj.setName(tileKey);
-      }
-    }
-  }
-
-  private createTileSprite(_tileType: number, x: number, y: number, gridX: number, gridY: number, storedSprite?: string | null): Phaser.GameObjects.Image | null {
-    // Use stored sprite if available, otherwise use the selected tile sprite
-    const spriteKey = storedSprite || this.selectedTileSprite;
-
-    if (!spriteKey) {
-      console.warn('No sprite key available for tile');
-      return null;
-    }
-
-    const tileSprite = this.add.image(x + GRID_SIZE / 2, y + GRID_SIZE / 2, spriteKey);
-    tileSprite.setDisplaySize(GRID_SIZE, GRID_SIZE);
-    
-    // Make tile interactive and clickable
-    tileSprite.setInteractive();
-    
-    // Store grid position in userData for easy access
-    tileSprite.setData('gridX', gridX);
-    tileSprite.setData('gridY', gridY);
-    tileSprite.setData('tileType', _tileType);
-    tileSprite.setData('spriteKey', spriteKey);
-    
-    // Add click handler for tile interaction
-    tileSprite.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.handleTileClick(pointer, gridX, gridY, tileSprite);
-    });
-    
-    // Add hover effects
-    tileSprite.on('pointerover', () => {
-      if (!this.isDialogOpen) {
-        tileSprite.setAlpha(0.8);
-      }
-    });
-    
-    tileSprite.on('pointerout', () => {
-      tileSprite.setAlpha(1.0);
-    });
-    
-    // Add tile to the tile layer
-    this.tileLayer.add(tileSprite);
-
-    return tileSprite;
-  }
-
-  /**
-   * Handles tile click events with proper priority checking
-   */
-  private handleTileClick(pointer: Phaser.Input.Pointer, gridX: number, gridY: number, _tileSprite: Phaser.GameObjects.Image): void {
-    console.log('🎯 Tile clicked:', { gridX, gridY, placementMode: this.placementMode });
-    
-    // Don't handle clicks if dialog is open
-    if (this.isDialogOpen) {
-      console.log('❌ Blocked: Dialog is open');
-      return;
-    }
-
-    // Check if we're clicking on UI elements first
-    const hitObjects = this.input.hitTestPointer(pointer);
-    const isClickingUIButton = hitObjects.some(obj => {
-      if (obj.name && obj.name.includes('button')) return true;
-      if (obj.parentContainer) {
-        const containerName = obj.parentContainer.name;
-        return containerName === 'header' || containerName === 'footer';
-      }
-      return false;
-    });
-
-    if (isClickingUIButton || this.isPointerInUIArea(pointer)) {
-      console.log('❌ Blocked: Clicking on UI element');
-      return;
-    }
-
-    // Only handle tile-specific placement in tile mode
-    // For enemy/spawn mode, let the global handler deal with it
-    if (this.placementMode === 'tile') {
-      this.handlePlacement(pointer.worldX, pointer.worldY);
-    }
-  }
-
-  /**
-   * Handles entity click events (enemies and spawn points) with highest priority
-   */
-  private handleEntityClick(pointer: Phaser.Input.Pointer, gridX: number, gridY: number, entityType: 'enemy' | 'spawn', _entitySprite: Phaser.GameObjects.Image): void {
-    console.log('🎯 Entity clicked:', { gridX, gridY, entityType, placementMode: this.placementMode });
-    
-    // Don't handle clicks if dialog is open
-    if (this.isDialogOpen) {
-      console.log('❌ Blocked: Dialog is open');
-      return;
-    }
-
-    // Check if we're clicking on UI elements first
-    const hitObjects = this.input.hitTestPointer(pointer);
-    const isClickingUIButton = hitObjects.some(obj => {
-      if (obj.name && obj.name.includes('button')) return true;
-      if (obj.parentContainer) {
-        const containerName = obj.parentContainer.name;
-        return containerName === 'header' || containerName === 'footer';
-      }
-      return false;
-    });
-
-    if (isClickingUIButton || this.isPointerInUIArea(pointer)) {
-      console.log('❌ Blocked: Clicking on UI element');
-      return;
-    }
-
-    // Always remove entities when clicked, regardless of placement mode
-    if (entityType === 'enemy') {
-      // Remove enemy and leave tile intact
-      this.removeEnemyAt(gridX, gridY);
-    } else if (entityType === 'spawn') {
-      // Remove spawn point and leave tile intact
-      this.removeSpawnAt(gridX, gridY);
-    }
-  }
-
-  /**
-   * Removes enemy at the specified grid position
-   */
-  private removeEnemyAt(gridX: number, gridY: number): void {
-    const existingEnemyIndex = this.levelData.enemies.findIndex(
-      enemy => enemy.x === gridX && enemy.y === gridY
-    );
-
-    if (existingEnemyIndex >= 0) {
-      // Remove existing enemy
-      this.levelData.enemies.splice(existingEnemyIndex, 1);
-      this.removeEnemyVisual(gridX, gridY);
-      this.showMessage('Enemy removed', 0xAAAA44, 1500);
-      this.updateLevelManager();
-    }
-  }
-
-  /**
-   * Removes spawn point at the specified grid position
-   */
-  private removeSpawnAt(gridX: number, gridY: number): void {
-    if (this.levelData.spawn && this.levelData.spawn.x === gridX && this.levelData.spawn.y === gridY) {
-      // Remove spawn point
-      this.levelData.spawn = null;
-      this.removeSpawnVisual();
-      this.showMessage('Spawn point removed', 0xAAAA44, 1500);
-      this.updateLevelManager();
-    }
-  }
-
-  /**
-   * Toggles enemy at the specified grid position
-   */
-  private toggleEnemyAt(gridX: number, gridY: number): void {
-    const existingEnemyIndex = this.levelData.enemies.findIndex(
-      enemy => enemy.x === gridX && enemy.y === gridY
-    );
-
-    if (existingEnemyIndex >= 0) {
-      // Remove existing enemy
-      this.levelData.enemies.splice(existingEnemyIndex, 1);
-      this.removeEnemyVisual(gridX, gridY);
-      this.showMessage('Enemy removed', 0xAAAA44, 1500);
-    } else {
-      // Add new enemy
-      this.levelData.enemies.push({
-        x: gridX,
-        y: gridY,
-        type: this.selectedEnemyType
-      });
-      this.renderEnemyAt(gridX, gridY, this.selectedEnemyType);
-      this.showMessage('Enemy added', 0x44AA44, 1500);
-    }
-    this.updateLevelManager();
-  }
-
-  /**
-   * Moves spawn point to the specified grid position
-   */
-  private moveSpawnTo(gridX: number, gridY: number): void {
-    // Remove previous spawn point visual
-    this.removeSpawnVisual();
-
-    // Update spawn position
-    this.levelData.spawn = { x: gridX, y: gridY };
-    this.renderSpawnAt(gridX, gridY);
-    this.updateLevelManager();
-    this.showMessage('Spawn point moved', 0x44AA44, 1500);
-  }
-
   private placeEnemy(worldX: number, worldY: number): void {
     if (!this.levelData) return;
 
     const gridPos = GridUtils.worldToGrid(worldX, worldY);
     console.log('🎯 Placing enemy at world position:', { worldX, worldY, gridPos });
-    console.log('🔢 Grid calculation details:', {
-      worldX, worldY,
-      gridX: Math.floor(worldX / GRID_SIZE),
-      gridY: Math.floor(worldY / GRID_SIZE),
-      calculatedGridPos: gridPos
-    });
 
     if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
       // Validate enemy placement using the helper
-      const placementValidation = this.validationHelper.validateEnemyPlacement(this.levelData, gridPos.x, gridPos.y);
+      const placementValidation = this.levelValidationService.validateEnemyPlacement(this.levelData, gridPos.x, gridPos.y);
       console.log('✅ Enemy placement validation:', placementValidation);
       
       if (!placementValidation.isValid) {
@@ -860,7 +1074,6 @@ export class LevelBuilder extends Scene {
       );
 
       console.log('🔍 Existing enemy check:', { existingEnemyIndex, enemiesCount: this.levelData.enemies.length });
-      console.log('👾 Current enemies in level:', this.levelData.enemies.map(e => ({ x: e.x, y: e.y, type: e.type })));
 
       if (existingEnemyIndex >= 0) {
         // Remove existing enemy
@@ -894,7 +1107,7 @@ export class LevelBuilder extends Scene {
 
     if (GridUtils.isValidGridPosition(gridPos.x, gridPos.y, DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE)) {
       // Validate spawn placement using the helper
-      const placementValidation = this.validationHelper.validateSpawnPlacement(this.levelData, gridPos.x, gridPos.y);
+      const placementValidation = this.levelValidationService.validateSpawnPlacement(this.levelData, gridPos.x, gridPos.y);
       if (!placementValidation.isValid) {
         this.showMessage(placementValidation.message, 0xAA4444, 2000);
         return;
@@ -967,12 +1180,14 @@ export class LevelBuilder extends Scene {
     
     // Add click handler for enemy interaction (highest priority)
     enemy.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.handleEntityClick(pointer, gridX, gridY, 'enemy', enemy);
+      if (this.inputManager) {
+        this.inputManager.handleEntityClick(pointer, gridX, gridY, 'enemy', enemy);
+      }
     });
     
     // Add hover effects
     enemy.on('pointerover', () => {
-      if (!this.isDialogOpen) {
+      if (!this.uiManager.isDialogOpen()) {
         enemy.setAlpha(0.8);
         enemy.setScale(scale * 1.1);
       }
@@ -1018,12 +1233,14 @@ export class LevelBuilder extends Scene {
     
     // Add click handler for spawn interaction (highest priority)
     spawn.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      this.handleEntityClick(pointer, gridX, gridY, 'spawn', spawn);
+      if (this.inputManager) {
+        this.inputManager.handleEntityClick(pointer, gridX, gridY, 'spawn', spawn);
+      }
     });
     
     // Add hover effects
     spawn.on('pointerover', () => {
-      if (!this.isDialogOpen) {
+      if (!this.uiManager.isDialogOpen()) {
         spawn.setAlpha(1.0);
         spawn.setScale(0.45);
       }
@@ -1064,68 +1281,72 @@ export class LevelBuilder extends Scene {
     if (spawnText) spawnText.destroy();
   }
 
-  private createSaveToolbar(): void {
-    // Create footer background using screen coordinates (not world coordinates)
-    const footerHeight = 60;
-    const footerY = this.uiCamera.height - footerHeight;
+  /**
+   * Handles entity click events (enemies and spawn points) with highest priority
+   */
+  private handleEntityClick(pointer: Phaser.Input.Pointer, gridX: number, gridY: number, entityType: 'enemy' | 'spawn', _entitySprite: Phaser.GameObjects.Image): void {
+    console.log('🎯 Entity clicked:', { gridX, gridY, entityType, currentStage: this.currentStage });
+    
+    // Don't handle clicks if dialog is open
+    if (this.uiManager.isDialogOpen()) {
+      console.log('❌ Blocked: Dialog is open');
+      return;
+    }
 
-    const footerBackground = this.add.rectangle(
-      this.uiCamera.width / 2,
-      footerY + footerHeight / 2,
-      this.uiCamera.width,
-      footerHeight,
-      ColorTheme.BACKGROUND_OVERLAY,
-      0.9
-    );
-    footerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    footerBackground.setScrollFactor(0, 0);
-    footerBackground.setDepth(1000);
-    footerBackground.setName('footer_background');
-
-    // Create container centered at bottom using screen coordinates
-    const footer = this.add.container(this.uiCamera.width / 2, footerY + footerHeight / 2);
-    footer.setName('footer');
-
-    // Post button
-    const postButton = this.add.rectangle(-65, 0, 120, 40, ColorTheme.BUTTON_SUCCESS)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
-      .setName('footer_post_button');
-
-    const postLabel = this.add.text(-65, 0, 'Post', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px'
-    }).setOrigin(0.5);
-
-    postButton.on('pointerdown', () => this.saveAndPost());
-    postButton.on('pointerover', () => postButton.setStrokeStyle(3, ColorTheme.SUCCESS));
-    postButton.on('pointerout', () => postButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
-
-    // Clear Level button
-    const clearButton = this.add.rectangle(65, 0, 120, 40, ColorTheme.ERROR)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
-      .setName('footer_clear_button');
-
-    const clearLabel = this.add.text(65, 0, 'Clear Level', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px'
-    }).setOrigin(0.5);
-
-    clearButton.on('pointerdown', () => this.clearLevel());
-    clearButton.on('pointerover', () => clearButton.setStrokeStyle(3, ColorTheme.SUCCESS));
-    clearButton.on('pointerout', () => clearButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY));
-
-    footer.add([postButton, postLabel, clearButton, clearLabel]);
-    footer.setScrollFactor(0, 0);
-    footer.setDepth(1001);
-
-    // Ensure all buttons in footer have higher depth
-    footer.list.forEach(child => {
-      if (child && 'setDepth' in child) {
-        (child as Phaser.GameObjects.GameObject & { setDepth: (depth: number) => void }).setDepth(1002);
+    // Check if we're clicking on UI elements first
+    const hitObjects = this.input.hitTestPointer(pointer);
+    const isClickingUIButton = hitObjects.some(obj => {
+      if (obj.name && obj.name.includes('button')) return true;
+      if (obj.parentContainer) {
+        const containerName = obj.parentContainer.name;
+        return containerName === 'header' || containerName === 'footer';
       }
+      return false;
     });
+
+    if (isClickingUIButton || this.isPointerInUIArea(pointer)) {
+      console.log('❌ Blocked: Clicking on UI element');
+      return;
+    }
+
+    // Only handle entity removal in the appropriate stage
+    if (entityType === 'enemy' && this.currentStage === 'enemies') {
+      // Remove enemy and leave tile intact
+      this.removeEnemyAt(gridX, gridY);
+    } else if (entityType === 'spawn' && this.currentStage === 'spawn') {
+      // Remove spawn point and leave tile intact
+      this.removeSpawnAt(gridX, gridY);
+    }
+  }
+
+  /**
+   * Removes enemy at the specified grid position
+   */
+  private removeEnemyAt(gridX: number, gridY: number): void {
+    const existingEnemyIndex = this.levelData.enemies.findIndex(
+      enemy => enemy.x === gridX && enemy.y === gridY
+    );
+
+    if (existingEnemyIndex >= 0) {
+      // Remove existing enemy
+      this.levelData.enemies.splice(existingEnemyIndex, 1);
+      this.removeEnemyVisual(gridX, gridY);
+      this.showMessage('Enemy removed', 0xAAAA44, 1500);
+      this.updateLevelManager();
+    }
+  }
+
+  /**
+   * Removes spawn point at the specified grid position
+   */
+  private removeSpawnAt(gridX: number, gridY: number): void {
+    if (this.levelData.spawn && this.levelData.spawn.x === gridX && this.levelData.spawn.y === gridY) {
+      // Remove spawn point
+      this.levelData.spawn = null;
+      this.removeSpawnVisual();
+      this.showMessage('Spawn point removed', 0xAAAA44, 1500);
+      this.updateLevelManager();
+    }
   }
 
   private setupAutosave(): void {
@@ -1135,45 +1356,14 @@ export class LevelBuilder extends Scene {
     });
   }
 
-
   private updateLevelManager(): void {
     if (this.levelData) {
       this.levelManager.updateLevel(this.levelData);
     }
   }
 
-  private testLevel(): void {
-    try {
-      // Validate level before testing
-      const validationResult = this.validateLevel();
-      if (!validationResult.isValid) {
-        this.showMessage(`Cannot test level: ${validationResult.message}`, 0xAA4444);
-        return;
-      }
-
-      // Update level manager with current data
-      this.updateLevelManager();
-
-      // Show transition message
-      this.showMessage('Starting level test...', 0xAA44AA);
-
-      // Transition to gameplay scene with current level data
-      this.time.delayedCall(500, () => {
-        this.scene.start('GamePlay', {
-          levelData: this.levelData,
-          isTestMode: true,
-          customization: this.customization
-        });
-      });
-
-    } catch (error) {
-      console.error('Failed to test level:', error);
-      this.showMessage('Failed to start level test', 0xAA4444);
-    }
-  }
-
   private validateLevel(): { isValid: boolean; message: string } {
-    return this.validationHelper.validateLevel(this.levelData);
+    return this.levelValidationService.validateLevel(this.levelData);
   }
 
   private async saveAndPost(): Promise<void> {
@@ -1248,82 +1438,7 @@ export class LevelBuilder extends Scene {
   }
 
   private showRetryableError(title: string, details: string, retryCallback: () => void): void {
-    // Create error overlay using screen coordinates
-    const overlay = this.add.rectangle(
-      this.uiCamera.width / 2,
-      this.uiCamera.height / 2,
-      this.uiCamera.width,
-      this.uiCamera.height,
-      0x000000,
-      0.8
-    ).setOrigin(0.5).setScrollFactor(0, 0).setDepth(3000);
-
-    // Error container using screen coordinates
-    const errorContainer = this.add.container(this.uiCamera.width / 2, this.uiCamera.height / 2);
-    errorContainer.setScrollFactor(0, 0).setDepth(3001);
-
-    // Error background
-    const background = this.add.rectangle(0, 0, 400, 200, ColorTheme.ERROR, 0.9);
-    background.setStrokeStyle(3, ColorTheme.ERROR);
-
-    // Error title
-    const titleText = this.add.text(0, -60, title, {
-      ...ColorTheme.getTextStyle('medium'),
-      fontSize: '20px',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // Error details
-    const detailsText = this.add.text(0, -20, details, {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px',
-      wordWrap: { width: 350 },
-      align: 'center'
-    }).setOrigin(0.5);
-
-    // Retry button
-    const retryButton = this.add.text(-60, 40, 'Retry', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '16px',
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive();
-
-    // Cancel button
-    const cancelButton = this.add.text(60, 40, 'Cancel', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '16px',
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive();
-
-    errorContainer.add([background, titleText, detailsText, retryButton, cancelButton]);
-
-    // Button interactions
-    retryButton.on('pointerdown', () => {
-      overlay.destroy();
-      errorContainer.destroy();
-      retryCallback();
-    });
-
-    cancelButton.on('pointerdown', () => {
-      overlay.destroy();
-      errorContainer.destroy();
-    });
-
-    // Hover effects
-    retryButton.on('pointerover', () => retryButton.setStyle({
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
-    }));
-    retryButton.on('pointerout', () => retryButton.setStyle({
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`
-    }));
-    cancelButton.on('pointerover', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
-    }));
-    cancelButton.on('pointerout', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
-    }));
+    this.uiManager.showRetryableError(title, details, retryCallback);
   }
 
   private promptForLevelMetadata(): boolean {
@@ -1350,36 +1465,13 @@ export class LevelBuilder extends Scene {
     }
 
     // Validate metadata using the helper
-    const metadataValidation = this.validationHelper.validateMetadata(this.levelData);
+    const metadataValidation = this.levelValidationService.validateMetadata(this.levelData);
     if (!metadataValidation.isValid) {
       this.showMessage(metadataValidation.message, 0xAA4444);
       return false;
     }
 
     return true;
-  }
-
-  private exportLevel(): void {
-    const progressContainer = this.showProgressMessage('Preparing export...', 20);
-
-    try {
-      this.updateProgressMessage(progressContainer, 'Validating level data...', 40);
-      this.updateLevelManager();
-
-      this.updateProgressMessage(progressContainer, 'Generating JSON file...', 70);
-      StorageUtils.downloadLevelAsFile(this.levelData);
-
-      this.updateProgressMessage(progressContainer, 'Export complete!', 100);
-
-      setTimeout(() => {
-        progressContainer.destroy();
-        this.showMessage('Level exported as JSON file', 0x4444AA);
-      }, 500);
-    } catch (error) {
-      console.error('Failed to export level:', error);
-      progressContainer.destroy();
-      this.showMessage(`Export failed: ${error instanceof Error ? error.message : 'Unknown error'}`, 0xAA4444, 5000);
-    }
   }
 
   private clearLevel(): void {
@@ -1418,194 +1510,8 @@ export class LevelBuilder extends Scene {
     );
   }
 
-
-
-  private showTileSelectionPopup(): void {
-    console.log('🚀 === SHOWING TILE SELECTION ===');
-
-    // Save current state before navigating away
-    this.saveCurrentState();
-    this.saveCameraState();
-
-    // Prepare tile options
-    const tileOptions: OptionElementData[] = LevelBuilder.TILE_OPTIONS.map(tile => ({
-      id: tile.sprite,
-      sprite: tile.sprite,
-      label: tile.label,
-      data: { sprite: tile.sprite, type: TILE_TYPES.WALL }
-    }));
-
-    // Navigate to GridSelectionScene
-    this.scene.start('GridSelectionScene', {
-      options: tileOptions,
-      title: 'Select Tile Type',
-      returnScene: 'LevelBuilder',
-      returnData: { customization: this.customization },
-      cameraState: this.cameraState
-    });
-
-    console.log('🎯 Navigated to GridSelectionScene for tile selection');
-  }
-
-  private showEnemySelectionPopup(): void {
-    console.log('🚀 === SHOWING ENEMY SELECTION ===');
-
-    // Save current state before navigating away
-    this.saveCurrentState();
-    this.saveCameraState();
-
-    // Prepare enemy options
-    const enemyOptions: OptionElementData[] = LevelBuilder.ENEMY_OPTIONS.map(enemy => ({
-      id: enemy.type.toString(),
-      sprite: enemy.sprite,
-      label: enemy.label,
-      data: { type: enemy.type, sprite: enemy.sprite, scale: enemy.scale, tint: enemy.tint }
-    }));
-
-    // Navigate to GridSelectionScene
-    this.scene.start('GridSelectionScene', {
-      options: enemyOptions,
-      title: 'Select Enemy Type',
-      returnScene: 'LevelBuilder',
-      returnData: { customization: this.customization },
-      cameraState: this.cameraState
-    });
-
-    console.log('🎯 Navigated to GridSelectionScene for enemy selection');
-  }
-
-  private handleGridSelection(selectedOption: OptionElementData): void {
-    console.log('✅ Handling grid selection:', selectedOption);
-
-    const data = selectedOption.data as Record<string, unknown>; // Type assertion for the data field
-
-    // Check if this is an enemy selection (has scale property)
-    if (data.type !== undefined && data.scale !== undefined) {
-      // This is an enemy selection
-      this.selectedEnemyType = data.type as number;
-      this.placementMode = 'enemy';
-      this.updateModeSelection();
-      console.log('👾 Enemy selection updated:', { type: this.selectedEnemyType });
-    } else if (data.sprite && data.type !== undefined) {
-      // This is a tile selection (has sprite and type, but no scale)
-      this.selectedTileSprite = data.sprite as string;
-      this.selectedTileType = data.type as number;
-      this.placementMode = 'tile';
-      this.updateModeSelection();
-      console.log('🎨 Tile selection updated:', { sprite: this.selectedTileSprite, type: this.selectedTileType });
-    }
-  }
-
   private showConfirmationDialog(title: string, message: string, onConfirm: () => void): void {
-    // Set dialog flag and disable scene input events
-    this.isDialogOpen = true;
-    this.disableSceneInput();
-
-    // Create overlay that blocks all clicks using screen coordinates
-    const overlay = this.add.rectangle(
-      this.uiCamera.width / 2,
-      this.uiCamera.height / 2,
-      this.uiCamera.width,
-      this.uiCamera.height,
-      0x000000,
-      0.7
-    ).setOrigin(0.5).setScrollFactor(0, 0).setDepth(3000).setInteractive();
-
-    // Block all pointer events from passing through the overlay
-    overlay.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Stop the event from propagating to objects behind the overlay
-      pointer.event.stopPropagation();
-    });
-
-    overlay.on('pointermove', (pointer: Phaser.Input.Pointer) => {
-      // Stop move events from propagating as well
-      pointer.event.stopPropagation();
-    });
-
-    // Dialog container using screen coordinates
-    const dialogContainer = this.add.container(this.uiCamera.width / 2, this.uiCamera.height / 2);
-    dialogContainer.setScrollFactor(0, 0).setDepth(3001);
-
-    // Dialog background - make interactive to capture clicks
-    const background = this.add.rectangle(0, 0, 400, 180, ColorTheme.SECONDARY_DARK, 0.95);
-    background.setStrokeStyle(3, ColorTheme.BORDER_SECONDARY);
-    background.setInteractive();
-
-    // Prevent clicks on dialog background from propagating
-    background.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      pointer.event.stopPropagation();
-    });
-
-    // Title
-    const titleText = this.add.text(0, -50, title, {
-      ...ColorTheme.getTextStyle('medium'),
-      fontSize: '20px',
-      fontStyle: 'bold'
-    }).setOrigin(0.5);
-
-    // Message
-    const messageText = this.add.text(0, -10, message, {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px',
-      wordWrap: { width: 350 },
-      align: 'center'
-    }).setOrigin(0.5);
-
-    // Confirm button
-    const confirmButton = this.add.text(-60, 40, 'Confirm', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '16px',
-      backgroundColor: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive().setName('dialog_confirm_button');
-
-    // Cancel button
-    const cancelButton = this.add.text(60, 40, 'Cancel', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '16px',
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`,
-      padding: { x: 20, y: 10 }
-    }).setOrigin(0.5).setInteractive().setName('dialog_cancel_button');
-
-    dialogContainer.add([background, titleText, messageText, confirmButton, cancelButton]);
-
-    // Button interactions
-    confirmButton.on('pointerdown', () => {
-      this.isDialogOpen = false; // Reset dialog flag
-      overlay.destroy();
-      dialogContainer.destroy();
-      onConfirm();
-
-      // Re-enable input after a small delay to prevent the same click from placing tiles
-      this.time.delayedCall(50, () => {
-        this.enableSceneInput();
-      });
-    });
-
-    cancelButton.on('pointerdown', () => {
-      this.isDialogOpen = false; // Reset dialog flag
-      overlay.destroy();
-      dialogContainer.destroy();
-
-      // Re-enable input after a small delay to prevent the same click from placing tiles
-      this.time.delayedCall(50, () => {
-        this.enableSceneInput();
-      });
-    });
-
-    // Hover effects
-    confirmButton.on('pointerover', () => confirmButton.setStyle({
-      backgroundColor: `#${(ColorTheme.ERROR | 0x222222).toString(16).padStart(6, '0')}`
-    }));
-    confirmButton.on('pointerout', () => confirmButton.setStyle({
-      backgroundColor: `#${ColorTheme.ERROR.toString(16).padStart(6, '0')}`
-    }));
-    cancelButton.on('pointerover', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.SECONDARY_LIGHT.toString(16).padStart(6, '0')}`
-    }));
-    cancelButton.on('pointerout', () => cancelButton.setStyle({
-      backgroundColor: `#${ColorTheme.BUTTON_SECONDARY_HOVER.toString(16).padStart(6, '0')}`
-    }));
+    this.uiManager.showConfirmationDialog(title, message, onConfirm);
   }
 
   private clearAllVisuals(): void {
@@ -1619,95 +1525,15 @@ export class LevelBuilder extends Scene {
   }
 
   private showMessage(text: string, color: number, duration: number = 3000): void {
-    // Create message container using screen coordinates
-    const messageContainer = this.add.container(this.uiCamera.width / 2, 100);
-    messageContainer.setScrollFactor(0, 0).setDepth(2000);
-
-    // Message background
-    const background = this.add.rectangle(0, 0, 0, 50, color, 0.9);
-    background.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-
-    // Message text
-    const messageText = this.add.text(0, 0, text, {
-      fontSize: '16px',
-      color: '#FFFFFF',
-      fontStyle: 'bold',
-      wordWrap: { width: 400 },
-      align: 'center'
-    }).setOrigin(0.5);
-
-    // Adjust background size to fit text
-    background.setSize(messageText.width + 20, 50);
-
-    messageContainer.add([background, messageText]);
-
-    // Slide in animation
-    messageContainer.setY(50);
-    this.tweens.add({
-      targets: messageContainer,
-      y: 100,
-      duration: 300,
-      ease: 'Back.easeOut'
-    });
-
-    // Auto-remove message after specified duration
-    this.time.delayedCall(duration, () => {
-      if (messageContainer && messageContainer.active) {
-        this.tweens.add({
-          targets: messageContainer,
-          y: 50,
-          alpha: 0,
-          duration: 300,
-          ease: 'Power2.easeIn',
-          onComplete: () => messageContainer.destroy()
-        });
-      }
-    });
+    this.uiManager.showMessage(text, color, duration);
   }
 
   private showProgressMessage(text: string, progress: number = 0): Phaser.GameObjects.Container {
-    // Create progress message container using screen coordinates
-    const container = this.add.container(this.uiCamera.width / 2, 150);
-    container.setScrollFactor(0, 0).setDepth(2000);
-
-    // Background
-    const background = this.add.rectangle(0, 0, 300, 80, ColorTheme.BACKGROUND_OVERLAY, 0.9);
-    background.setStrokeStyle(2, ColorTheme.BUTTON_PRIMARY);
-
-    // Message text
-    const messageText = this.add.text(0, -15, text, {
-      fontSize: '16px',
-      color: '#FFFFFF',
-      align: 'center'
-    }).setOrigin(0.5);
-
-    // Progress bar background
-    const progressBg = this.add.rectangle(0, 15, 200, 8, 0x333333);
-
-    // Progress bar fill
-    const progressFill = this.add.rectangle(-100, 15, progress * 2, 8, 0x4444AA);
-    progressFill.setOrigin(0, 0.5);
-
-    container.add([background, messageText, progressBg, progressFill]);
-    container.setData('progressFill', progressFill);
-    container.setData('messageText', messageText);
-
-    return container;
+    return this.uiManager.showProgressMessage(text, progress);
   }
 
   private updateProgressMessage(container: Phaser.GameObjects.Container, text: string, progress: number): void {
-    const progressFill = container.getData('progressFill') as Phaser.GameObjects.Rectangle;
-    const messageText = container.getData('messageText') as Phaser.GameObjects.Text;
-
-    if (progressFill && messageText) {
-      messageText.setText(text);
-      this.tweens.add({
-        targets: progressFill,
-        width: progress * 2,
-        duration: 200,
-        ease: 'Power2'
-      });
-    }
+    this.uiManager.updateProgressMessage(container, text, progress);
   }
 
   init(data?: { customization?: CustomizationData; selectedOption?: OptionElementData; cameraState?: { zoom: number; scrollX: number; scrollY: number } }): void {
@@ -1715,7 +1541,7 @@ export class LevelBuilder extends Scene {
     // Load from storage if not provided to ensure latest customization is used
     this.customization = data?.customization || StorageUtils.loadCustomization();
 
-    // Restore camera state if provided (when returning from GridSelectionScene)
+    // Restore camera state if provided
     if (data?.cameraState) {
       this.cameraState = data.cameraState;
       console.log('📷 Camera state received in init:', this.cameraState);
@@ -1741,6 +1567,17 @@ export class LevelBuilder extends Scene {
       StorageUtils.clearAutosaveTimer(this.autosaveTimer);
       this.autosaveTimer = null;
     }
+
+    // Disable input manager
+    if (this.inputManager) {
+      this.inputManager.disableInput();
+      this.inputManager.destroy();
+    }
+
+    // Destroy UI manager
+    if (this.uiManager) {
+      this.uiManager.destroy();
+    }
   }
 
   destroy(): void {
@@ -1750,6 +1587,17 @@ export class LevelBuilder extends Scene {
     if (this.autosaveTimer) {
       StorageUtils.clearAutosaveTimer(this.autosaveTimer);
       this.autosaveTimer = null;
+    }
+
+    // Disable and destroy input manager
+    if (this.inputManager) {
+      this.inputManager.disableInput();
+      this.inputManager.destroy();
+    }
+
+    // Destroy UI manager
+    if (this.uiManager) {
+      this.uiManager.destroy();
     }
   }
 
@@ -1769,20 +1617,6 @@ export class LevelBuilder extends Scene {
       console.log('✅ Level state saved successfully');
     } else {
       console.log('⚠️ No level data to save');
-    }
-  }
-
-  /**
-   * Saves the current camera state (zoom and position) for persistence across scene transitions
-   */
-  private saveCameraState(): void {
-    if (this.camera) {
-      this.cameraState = {
-        zoom: this.camera.zoom,
-        scrollX: this.camera.scrollX,
-        scrollY: this.camera.scrollY
-      };
-      console.log('📷 Camera state saved:', this.cameraState);
     }
   }
 
@@ -1853,5 +1687,4 @@ export class LevelBuilder extends Scene {
       layerChildrenCount: this.tileLayer.length
     });
   }
-
 }
