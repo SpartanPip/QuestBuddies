@@ -28,6 +28,8 @@ export class GamePlay extends Scene {
   private isTestMode: boolean = false;
   private customization: CustomizationData;
   private uiManager: GameplayUI;
+  private backgroundZone: Phaser.GameObjects.Zone | null = null;
+  private backgroundZoneHitCallback: ((hitArea: Phaser.Geom.Rectangle, x: number, y: number) => boolean) | null = null;
 
   constructor() {
     super('GamePlay');
@@ -58,23 +60,28 @@ export class GamePlay extends Scene {
     // Initialize UI manager with callbacks
     const uiCallbacks: GameplayUICallbacks = {
       onBackClick: () => {
-        if (this.isTestMode) {
-          this.scene.start('LevelBuilder');
-        } else {
-          this.scene.start('MainMenu');
+        console.log('🎮 [GamePlay] onBackClick callback called');
+        
+        // Disable scene input to stop all further input processing
+        // This makes the hitAreaCallback return false even if called during cleanup
+        // Do this before modifying the zone to prevent race conditions
+        this.input.enabled = false;
+        
+        // Now safely disable the background zone
+        if (this.backgroundZone && this.backgroundZone.input) {
+          this.backgroundZone.input.enabled = false;
+          this.backgroundZone.removeAllListeners();
         }
-      },
-      onRestartClick: () => {
-        this.restartLevel();
-      },
-      onMenuClick: () => {
-        if (this.isTestMode) {
-          this.scene.start('LevelBuilder');
-        } else {
-          this.scene.start('MainMenu');
-        }
+        
+        // Defer scene transition to next frame to ensure current input processing completes
+        // This allows Phaser to finish the current hitTestPointer cycle
+        this.time.delayedCall(0, () => {
+        console.log('🎮 [GamePlay] Starting MainMenu scene');
+        this.scene.start('MainMenu');
+        });
       },
       onRetryClick: () => {
+        console.log('🎮 [GamePlay] onRetryClick callback called');
         void this.loadLevelFromReddit();
       }
     };
@@ -105,16 +112,50 @@ export class GamePlay extends Scene {
   }
   
   private setupClickToMove(): void {
-    // Listen for pointer down events
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
-      // Don't handle clicks if game is over or paused
+    // Create an invisible background that captures clicks for player movement
+    // This allows UI buttons (which have higher depth) to handle clicks first
+    this.backgroundZone = this.add.zone(
+      this.cameras.main.centerX,
+      this.cameras.main.centerY,
+      this.cameras.main.width,
+      this.cameras.main.height
+    );
+    
+    // Set interactive with Rectangle hitArea and proper callback function
+    // Zones require explicit hitArea with callback - they don't use default bounds automatically
+    const hitArea = new Phaser.Geom.Rectangle(
+      -this.cameras.main.width / 2,
+      -this.cameras.main.height / 2,
+      this.cameras.main.width,
+      this.cameras.main.height
+    );
+    
+    // Store callback reference so we can ensure it's always valid
+    this.backgroundZoneHitCallback = (hitArea: Phaser.Geom.Rectangle, x: number, y: number) => {
+      // If input is disabled or zone is being cleaned up, always return false
+      if (!this.input.enabled || this.gameState !== 'playing') {
+        return false;
+      }
+      return Phaser.Geom.Rectangle.Contains(hitArea, x, y);
+    };
+    
+    this.backgroundZone.setInteractive(hitArea, this.backgroundZoneHitCallback);
+    this.backgroundZone.setDepth(0); // Lowest depth so UI can be on top
+    this.backgroundZone.setOrigin(0.5, 0.5);
+    
+    this.backgroundZone.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      console.log('🎮 [GamePlay] Background zone clicked');
+      
+      // Only move if game is playing
       if (this.gameState !== 'playing' || !this.player) {
         return;
       }
       
       // Convert pointer position to world coordinates
-      const worldX = this.camera.scrollX + pointer.x;
-      const worldY = this.camera.scrollY + pointer.y;
+      const worldX = this.camera.scrollX + pointer.worldX;
+      const worldY = this.camera.scrollY + pointer.worldY;
+      
+      console.log('🎮 [GamePlay] Moving player to:', worldX, worldY);
       
       // Set the target position for the player
       this.player.setTargetPosition(worldX, worldY);
@@ -126,7 +167,8 @@ export class GamePlay extends Scene {
       this.player.update(time, delta, this.enemies);
       this.updateCamera();
       this.updateEnemies(time, delta);
-      this.updatePlayerHealthDisplay();
+      // Player health bar now updates itself as part of the player entity
+      // this.updatePlayerHealthDisplay();
       this.checkGameState();
     }
   }
@@ -146,12 +188,6 @@ export class GamePlay extends Scene {
     
     // Remove destroyed enemies from array
     this.enemies = this.enemies.filter(enemy => enemy.active);
-  }
-
-  private updatePlayerHealthDisplay(): void {
-    if (this.player && this.uiManager) {
-      this.uiManager.updatePlayerHealth(this.player.getHealth(), this.player.getMaxHealth());
-    }
   }
 
   private checkPlayerEnemyCollisions(): void {
@@ -485,27 +521,84 @@ export class GamePlay extends Scene {
   }
 
   private showGameOver(): void {
+    console.log('🎮 [GamePlay] showGameOver called');
+    console.log('🎮 [GamePlay] UI Manager:', this.uiManager);
+    
+    // Display game over UI
     this.uiManager.showGameOver();
+    
+    // Wait 2 seconds before returning to menu
+    this.time.delayedCall(2000, () => {
+      console.log('🎮 [GamePlay] Returning to menu after game over');
+      
+      // Safely disable background zone pointer events first
+      if (this.backgroundZone && this.backgroundZone.input) {
+        this.backgroundZone.input.enabled = false;
+        this.backgroundZone.removeAllListeners();
+      }
+      
+      // Disable scene input to stop all further input processing
+      this.input.enabled = false;
+      
+      // Defer scene transition to next frame
+      this.time.delayedCall(0, () => {
+      if (this.isTestMode) {
+        this.scene.start('LevelBuilder');
+      } else {
+        this.scene.start('MainMenu');
+      }
+      });
+    });
   }
 
   private showVictory(): void {
-    this.uiManager.showVictory();
-  }
-
-  private restartLevel(): void {
-    // Reset game state
-    this.gameState = 'playing';
+    console.log('🎮 [GamePlay] showVictory called');
+    console.log('🎮 [GamePlay] UI Manager:', this.uiManager);
     
-    // Clear game state UI through UI manager
-    this.uiManager.clearGameStateUI();
-
-    // Reload the current level
-    if (this.levelData) {
-      this.loadLevel(this.levelData);
-    }
+    // Display victory UI
+    this.uiManager.showVictory();
+    
+    // Wait 2 seconds before returning to menu
+    this.time.delayedCall(2000, () => {
+      console.log('🎮 [GamePlay] Returning to menu after victory');
+      
+      // Safely disable background zone pointer events first
+      if (this.backgroundZone && this.backgroundZone.input) {
+        this.backgroundZone.input.enabled = false;
+        this.backgroundZone.removeAllListeners();
+      }
+      
+      // Disable scene input to stop all further input processing
+      this.input.enabled = false;
+      
+      // Defer scene transition to next frame
+      this.time.delayedCall(0, () => {
+      if (this.isTestMode) {
+        this.scene.start('LevelBuilder');
+      } else {
+        this.scene.start('MainMenu');
+      }
+      });
+    });
   }
+
 
   shutdown(): void {
+    // Safely clean up background zone during shutdown
+    // Disable input first, then clean up to prevent callback errors
+    if (this.backgroundZone) {
+      if (this.backgroundZone.input) {
+        this.backgroundZone.input.enabled = false;
+      }
+      this.backgroundZone.removeAllListeners();
+      this.backgroundZone.removeInteractive();
+      this.backgroundZone.destroy();
+      this.backgroundZone = null;
+    }
+    
+    // Clear callback reference
+    this.backgroundZoneHitCallback = null;
+    
     if (this.playerHealthBar) {
       this.playerHealthBar.destroy();
       this.playerHealthBar = null;

@@ -4,8 +4,6 @@ import { PlayerHealthBar } from '../HealthUI';
 
 export interface GameplayUICallbacks {
   onBackClick: () => void;
-  onRestartClick: () => void;
-  onMenuClick: () => void;
   onRetryClick: () => void;
 }
 
@@ -23,10 +21,6 @@ export class GameplayUI {
   private header: Phaser.GameObjects.Container | null = null;
   private playerHealthBar: PlayerHealthBar | null = null;
   private loadingText: Phaser.GameObjects.Text | null = null;
-  private gameStateText: Phaser.GameObjects.Text | null = null;
-  private restartButton: Phaser.GameObjects.Text | null = null;
-  private menuButton: Phaser.GameObjects.Text | null = null;
-  private backButton: Phaser.GameObjects.Text | null = null;
   private isTestMode: boolean = false;
 
   constructor(scene: Scene, uiCamera: Phaser.Cameras.Scene2D.Camera, callbacks: GameplayUICallbacks, isTestMode: boolean = false) {
@@ -41,11 +35,12 @@ export class GameplayUI {
    */
   createUI(): void {
     this.createHeader();
-    this.createPlayerHealthBar();
+    // Player health bar now follows the player above their head (similar to enemies)
+    // this.createPlayerHealthBar();
   }
 
   /**
-   * Creates the header with back button
+   * Creates the header with controls information
    */
   private createHeader(): void {
     // Create header background using screen coordinates
@@ -61,62 +56,48 @@ export class GameplayUI {
     headerBackground.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
     headerBackground.setScrollFactor(0, 0);
     headerBackground.setDepth(1000);
+    headerBackground.setInteractive(false);
     headerBackground.setName('header_background');
 
     // Create header container centered at top using screen coordinates
     this.header = this.scene.add.container(this.uiCamera.width / 2, headerHeight / 2);
     this.header.setName('header');
 
-    // Back button (positioned on the left)
-    const backButton = this.scene.add.rectangle(-this.uiCamera.width / 2 + 50, 0, 80, 40, ColorTheme.BUTTON_SECONDARY)
-      .setInteractive()
-      .setStrokeStyle(2, ColorTheme.BORDER_PRIMARY)
-      .setName('header_back_button');
+    // Controls text (centered in header)
+    const controlsText = this.scene.add.text(
+      0,
+      0,
+      'Controls: Click to Move • WASD/Arrows to Move',
+      {
+        ...ColorTheme.getTextStyle('small'),
+        fontSize: '11px',
+        align: 'center'
+      }
+    ).setOrigin(0.5).setInteractive(false);
 
-    const backLabel = this.scene.add.text(-this.uiCamera.width / 2 + 50, 0, '← Back', {
-      ...ColorTheme.getTextStyle('small'),
-      fontSize: '14px'
-    }).setOrigin(0.5);
-
-    backButton.on('pointerdown', () => {
-      this.callbacks.onBackClick();
-    });
-
-    backButton.on('pointerover', () => {
-      backButton.setStrokeStyle(3, ColorTheme.SUCCESS);
-    });
-    backButton.on('pointerout', () => {
-      backButton.setStrokeStyle(2, ColorTheme.BORDER_PRIMARY);
-    });
-
-    // Add back button to header
-    this.header.add([backButton, backLabel]);
+    // Add controls text to header
+    this.header.add([controlsText]);
 
     this.header.setScrollFactor(0, 0);
-    this.header.setDepth(1001);
+    this.header.setDepth(5000); // Very high depth to ensure header is always on top
 
-    // Ensure all buttons in header have higher depth
+    // Ensure all elements in header have higher depth
     this.header.list.forEach(child => {
       if ('setDepth' in child) {
-        (child as any).setDepth(1002);
+        (child as any).setDepth(5001);
       }
     });
   }
 
   /**
-   * Creates the player health bar
-   */
-  private createPlayerHealthBar(): void {
-    this.playerHealthBar = new PlayerHealthBar(this.scene);
-  }
-
-  /**
    * Updates the player health display
+   * NOTE: Player health bar now follows the player above their head, so this is no longer needed
    */
-  updatePlayerHealth(currentHealth: number, maxHealth: number): void {
-    if (this.playerHealthBar) {
-      this.playerHealthBar.updateHealth(currentHealth, maxHealth);
-    }
+  updatePlayerHealth(_currentHealth: number, _maxHealth: number): void {
+    // Player health bar is now attached to the player entity
+    // if (this.playerHealthBar) {
+    //   this.playerHealthBar.updateHealth(currentHealth, maxHealth);
+    // }
   }
 
   /**
@@ -301,7 +282,7 @@ export class GameplayUI {
     });
 
     menuButton.on('pointerdown', () => {
-      this.callbacks.onMenuClick();
+      this.callbacks.onBackClick();
     });
 
     // Hover effects
@@ -320,24 +301,30 @@ export class GameplayUI {
   }
 
   /**
-   * Shows the game over screen
+   * Shows a simple game over message (briefly before returning to menu)
    */
   showGameOver(): void {
-    // Create semi-transparent overlay
+    console.log('🎮 [GameplayUI] showGameOver called');
+    console.log('🎮 [GameplayUI] Camera centerX:', this.uiCamera.centerX, 'centerY:', this.uiCamera.centerY);
+    console.log('🎮 [GameplayUI] Camera width:', this.uiCamera.width, 'height:', this.uiCamera.height);
+    
     const overlayStyle = ColorTheme.getOverlayStyle(0.7);
-    this.scene.add.rectangle(
+    console.log('🎮 [GameplayUI] Overlay style:', overlayStyle);
+    
+    const overlay = this.scene.add.rectangle(
       this.uiCamera.centerX,
       this.uiCamera.centerY,
       this.uiCamera.width,
       this.uiCamera.height,
       overlayStyle.color,
       overlayStyle.alpha
-    ).setScrollFactor(0).setDepth(2000);
+    ).setScrollFactor(0).setDepth(2000).setInteractive(false); // Non-interactive so it doesn't block header buttons
+    
+    console.log('🎮 [GameplayUI] Created overlay:', overlay);
 
-    // Game over text
-    this.gameStateText = this.scene.add.text(
+    const textObj = this.scene.add.text(
       this.uiCamera.centerX,
-      this.uiCamera.centerY - 50,
+      this.uiCamera.centerY,
       'GAME OVER',
       {
         ...ColorTheme.getTextStyle('xlarge'),
@@ -345,61 +332,36 @@ export class GameplayUI {
         fontStyle: 'bold'
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Restart button
-    this.restartButton = this.scene.add.text(
-      this.uiCamera.centerX - 80,
-      this.uiCamera.centerY + 50,
-      'Restart',
-      {
-        ...ColorTheme.getTextStyle('medium'),
-        backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.restartButton.on('pointerdown', () => {
-      this.callbacks.onRestartClick();
-    });
-
-    // Menu/Back button
-    const menuButtonText = this.isTestMode ? 'Back to Builder' : 'Menu';
-    this.menuButton = this.scene.add.text(
-      this.uiCamera.centerX + 80,
-      this.uiCamera.centerY + 50,
-      menuButtonText,
-      {
-        fontSize: '24px',
-        color: '#ffffff',
-        backgroundColor: '#333333',
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.menuButton.on('pointerdown', () => {
-      this.callbacks.onMenuClick();
-    });
+    
+    console.log('🎮 [GameplayUI] Created text:', textObj);
+    console.log('🎮 [GameplayUI] Text position:', textObj.x, textObj.y);
   }
 
   /**
-   * Shows the victory screen
+   * Shows a simple victory message (briefly before returning to menu)
    */
   showVictory(): void {
-    // Create semi-transparent overlay
+    console.log('🎮 [GameplayUI] showVictory called');
+    console.log('🎮 [GameplayUI] Camera centerX:', this.uiCamera.centerX, 'centerY:', this.uiCamera.centerY);
+    console.log('🎮 [GameplayUI] Camera width:', this.uiCamera.width, 'height:', this.uiCamera.height);
+    
     const overlayStyle = ColorTheme.getOverlayStyle(0.7);
-    this.scene.add.rectangle(
+    console.log('🎮 [GameplayUI] Overlay style:', overlayStyle);
+    
+    const overlay = this.scene.add.rectangle(
       this.uiCamera.centerX,
       this.uiCamera.centerY,
       this.uiCamera.width,
       this.uiCamera.height,
       overlayStyle.color,
       overlayStyle.alpha
-    ).setScrollFactor(0).setDepth(2000);
+    ).setScrollFactor(0).setDepth(2000).setInteractive(false); // Non-interactive so it doesn't block header buttons
+    
+    console.log('🎮 [GameplayUI] Created overlay:', overlay);
 
-    // Victory text
-    this.gameStateText = this.scene.add.text(
+    const textObj = this.scene.add.text(
       this.uiCamera.centerX,
-      this.uiCamera.centerY - 50,
+      this.uiCamera.centerY,
       'VICTORY!',
       {
         ...ColorTheme.getTextStyle('xlarge'),
@@ -407,68 +369,9 @@ export class GameplayUI {
         fontStyle: 'bold'
       }
     ).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Victory message
-    this.scene.add.text(
-      this.uiCamera.centerX,
-      this.uiCamera.centerY - 10,
-      'All enemies defeated!',
-      {
-        ...ColorTheme.getTextStyle('medium')
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001);
-
-    // Restart button
-    this.restartButton = this.scene.add.text(
-      this.uiCamera.centerX - 80,
-      this.uiCamera.centerY + 50,
-      'Play Again',
-      {
-        ...ColorTheme.getTextStyle('medium'),
-        backgroundColor: `#${ColorTheme.BUTTON_SECONDARY.toString(16).padStart(6, '0')}`,
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.restartButton.on('pointerdown', () => {
-      this.callbacks.onRestartClick();
-    });
-
-    // Menu/Back button
-    const menuButtonText = this.isTestMode ? 'Back to Builder' : 'Menu';
-    this.menuButton = this.scene.add.text(
-      this.uiCamera.centerX + 80,
-      this.uiCamera.centerY + 50,
-      menuButtonText,
-      {
-        fontSize: '24px',
-        color: '#ffffff',
-        backgroundColor: '#333333',
-        padding: { x: 20, y: 10 }
-      }
-    ).setOrigin(0.5).setScrollFactor(0).setDepth(2001).setInteractive();
-
-    this.menuButton.on('pointerdown', () => {
-      this.callbacks.onMenuClick();
-    });
-  }
-
-  /**
-   * Clears all game state UI elements
-   */
-  clearGameStateUI(): void {
-    if (this.gameStateText) {
-      this.gameStateText.destroy();
-      this.gameStateText = null;
-    }
-    if (this.restartButton) {
-      this.restartButton.destroy();
-      this.restartButton = null;
-    }
-    if (this.menuButton) {
-      this.menuButton.destroy();
-      this.menuButton = null;
-    }
+    
+    console.log('🎮 [GameplayUI] Created text:', textObj);
+    console.log('🎮 [GameplayUI] Text position:', textObj.x, textObj.y);
   }
 
   /**
@@ -485,11 +388,6 @@ export class GameplayUI {
     }
     if (this.loadingText) {
       this.hideLoadingIndicator();
-    }
-    this.clearGameStateUI();
-    if (this.backButton) {
-      this.backButton.destroy();
-      this.backButton = null;
     }
   }
 }

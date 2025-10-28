@@ -1,10 +1,11 @@
 import * as Phaser from 'phaser';
 import { Position } from '../../../shared/types/level';
+import { Enemy } from './Enemy';
 
 export class Weapon extends Phaser.GameObjects.Container {
   private sprite: Phaser.GameObjects.Image;
   private damage: number = 10;
-  private range: number = 64;
+  private range: number = 16;
   private weaponAngle: number = 0;
   private rotationSpeed: number = 2; // radians per second
   private orbitRadius: number = 40;
@@ -28,7 +29,7 @@ export class Weapon extends Phaser.GameObjects.Container {
     this.add(this.sprite);
   }
 
-  updateWeapon(delta: number, enemies?: any[]): void {
+  updateWeapon(delta: number, enemies?: Enemy[]): void {
     this.updateRotation(delta);
     if (enemies) {
       this.checkEnemyCollisions(enemies);
@@ -55,7 +56,7 @@ export class Weapon extends Phaser.GameObjects.Container {
     this.sprite.setRotation(this.weaponAngle + Math.PI / 2);
   }
 
-  checkEnemyCollisions(enemies: any[]): void {
+  checkEnemyCollisions(enemies: Enemy[]): void {
     // Get weapon world position
     const weaponWorldPos = this.getWeaponWorldPosition();
     
@@ -75,7 +76,7 @@ export class Weapon extends Phaser.GameObjects.Container {
     });
   }
 
-  private dealDamageToEnemy(enemy: any, enemyId: string): void {
+  private dealDamageToEnemy(enemy: Enemy, enemyId: string): void {
     const currentTime = Date.now();
     const lastDamage = this.lastDamageTime.get(enemyId) || 0;
 
@@ -115,10 +116,21 @@ export class Weapon extends Phaser.GameObjects.Container {
     });
   }
 
+  setPlayer(_player: Phaser.GameObjects.Container): void {
+    // Method kept for compatibility but not needed for world position
+    // World position is calculated using the sprite's transform matrix
+  }
+
   private getWeaponWorldPosition(): Position {
-    // Transform local position to world coordinates
-    const worldX = this.x + this.sprite.x;
-    const worldY = this.y + this.sprite.y;
+    // Transform to world coordinates using Phaser's transform matrix
+    // The weapon is a child of the player container
+    // So we need to get the sprite's world position
+    const spriteWorldPos = this.sprite.getWorldTransformMatrix();
+    
+    // Extract world position from the transform matrix
+    // The matrix's tx and ty represent the world translation
+    const worldX = spriteWorldPos.tx;
+    const worldY = spriteWorldPos.ty;
     
     return { x: worldX, y: worldY };
   }

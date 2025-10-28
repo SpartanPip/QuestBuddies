@@ -11,8 +11,8 @@ export const createPost = async () => {
       // Splash screen customization
       appDisplayName: 'quest-buddies',
       backgroundUri: 'default-splash.png',
-      buttonLabel: 'Start Playing',
-      description: 'An exciting interactive experience',
+      buttonLabel: 'Play!',
+      description: 'buil your own levels and share with friends',
       entryUri: 'index.html',
       heading: 'Welcome to the Game!',
       appIconUri: 'default-icon.png',

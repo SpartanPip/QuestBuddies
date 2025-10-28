@@ -12,6 +12,8 @@ export class Player extends Phaser.GameObjects.Container {
   private health: number = 100;
   private maxHealth: number = 100;
   private weapon: Weapon;
+  private healthBar: Phaser.GameObjects.Graphics;
+  private healthBarBg: Phaser.GameObjects.Graphics;
   
   // Touch controls
   private virtualJoystick: VirtualJoystick | null = null;
@@ -27,6 +29,7 @@ export class Player extends Phaser.GameObjects.Container {
     this.customization = customization || { avatar: 'boy', weapon: 'sword' };
     
     this.createSprite();
+    this.createHealthBar();
     this.setupInput();
     this.setupTouchControls();
     this.createWeapon();
@@ -51,6 +54,43 @@ export class Player extends Phaser.GameObjects.Container {
     this.sprite = this.scene.add.image(0, 0, avatarTexture);
     this.sprite.setScale(0.5); // Scale down to appropriate size
     this.add(this.sprite);
+  }
+
+  private createHealthBar(): void {
+    const barWidth = 24;
+    const barHeight = 4;
+    const barY = -18;
+    
+    // Background
+    this.healthBarBg = this.scene.add.graphics();
+    this.healthBarBg.fillStyle(0x000000, 0.8);
+    this.healthBarBg.fillRect(-barWidth / 2, barY, barWidth, barHeight);
+    this.add(this.healthBarBg);
+    
+    // Health bar
+    this.healthBar = this.scene.add.graphics();
+    this.updateHealthBar();
+    this.add(this.healthBar);
+  }
+
+  private updateHealthBar(): void {
+    if (!this.healthBar) return;
+    
+    this.healthBar.clear();
+    
+    const barWidth = 24;
+    const barHeight = 4;
+    const barY = -18;
+    const healthPercent = this.health / this.maxHealth;
+    const currentWidth = barWidth * healthPercent;
+    
+    // Health bar color based on health percentage
+    let color = 0x00ff00; // Green
+    if (healthPercent < 0.6) color = 0xffff00; // Yellow
+    if (healthPercent < 0.3) color = 0xff0000; // Red
+    
+    this.healthBar.fillStyle(color);
+    this.healthBar.fillRect(-barWidth / 2, barY, currentWidth, barHeight);
   }
 
   private setupInput(): void {
@@ -80,6 +120,8 @@ export class Player extends Phaser.GameObjects.Container {
     if (this.weapon && delta !== undefined) {
       this.weapon.updateWeapon(delta, enemies);
     }
+    
+    this.updateHealthBar();
   }
 
   setTargetPosition(_x: number, _y: number): void {
@@ -89,6 +131,7 @@ export class Player extends Phaser.GameObjects.Container {
 
   private createWeapon(): void {
     this.weapon = new Weapon(this.scene, 0, 0, this.customization.weapon);
+    this.weapon.setPlayer(this);
     this.add(this.weapon);
   }
 
@@ -157,6 +200,8 @@ export class Player extends Phaser.GameObjects.Container {
     this.scene.time.delayedCall(200, () => {
       this.sprite.clearTint();
     });
+    
+    this.updateHealthBar();
   }
 
   getHealth(): number {
