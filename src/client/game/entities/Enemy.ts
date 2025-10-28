@@ -14,7 +14,8 @@ export class Enemy extends Phaser.GameObjects.Container {
   private jitterTimer: number = 0;
   private jitterDirection: Position = { x: 0, y: 0 };
   private jitterInterval: number = 1000; // Change jitter every 1 second
-  private detectionRange: number = 200;
+  private detectionRange: number = 100;
+  private isTriggered: boolean = false;
   
   // Boid behavior properties
   private separationRadius: number = 30;
@@ -172,11 +173,18 @@ export class Enemy extends Phaser.GameObjects.Container {
       myPos.x, myPos.y, playerPos.x, playerPos.y
     );
     
-    // Only move if player is within detection range
-    if (distanceToPlayer > this.detectionRange) {
-      this.setVelocity(0, 0);
-      return;
+    // If not triggered yet, check if player is within detection range to trigger
+    if (!this.isTriggered) {
+      if (distanceToPlayer <= this.detectionRange) {
+        // Player is within range, trigger the enemy
+        this.isTriggered = true;
+      } else {
+        // Player is not in range, wait in place
+        this.setVelocity(0, 0);
+        return;
+      }
     }
+    // Once triggered, always pursue the player regardless of distance
     
     // Calculate movement toward player (boid seek behavior)
     const seekForce = this.calculateSeekForce(playerPos, myPos);

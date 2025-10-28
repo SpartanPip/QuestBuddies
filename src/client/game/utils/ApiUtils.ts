@@ -101,7 +101,7 @@ export class ApiUtils {
     
     // Add just one enemy in the center
     const enemies = [
-      { x: 5, y: 5, type: 0 } // Single basic enemy in the center
+      { x: 9, y: 9, type: 0 } // Single basic enemy in the center
     ];
     
     return {
