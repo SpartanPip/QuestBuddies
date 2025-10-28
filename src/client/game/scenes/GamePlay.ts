@@ -448,6 +448,15 @@ export class GamePlay extends Scene {
     // Create player instance with customization data
     this.player = new Player(this, spawnWorldPos.x, spawnWorldPos.y, this.customization);
     
+    // Set level data for tile-based movement validation
+    if (this.player && this.levelData) {
+      this.player.setLevelData(
+        this.levelData.tiles,
+        this.levelWidth,
+        this.levelHeight
+      );
+    }
+    
     // Set physics world bounds based on level size
     if (this.physics && this.physics.world) {
       const worldWidth = this.levelWidth * GRID_SIZE;

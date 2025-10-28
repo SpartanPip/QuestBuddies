@@ -3,6 +3,7 @@ import { Position, GRID_SIZE } from '../../../shared/types/level';
 import { Weapon } from './Weapon';
 import { CustomizationData } from '../utils/StorageUtils';
 import { Enemy } from './Enemy';
+import { GridUtils } from '../utils/GridUtils';
 
 export class Player extends Phaser.GameObjects.Container {
   private sprite: Phaser.GameObjects.Image;
@@ -21,6 +22,11 @@ export class Player extends Phaser.GameObjects.Container {
   
   // Customization data
   private customization: CustomizationData;
+  
+  // Level data for tile validation
+  private levelTiles: number[][] | null = null;
+  private levelWidth: number = 0;
+  private levelHeight: number = 0;
   
   constructor(scene: Phaser.Scene, x: number, y: number, customization?: CustomizationData) {
     super(scene, x, y);
@@ -178,7 +184,85 @@ export class Player extends Phaser.GameObjects.Container {
       velocityY *= normalizer;
     }
 
-    body.setVelocity(velocityX, velocityY);
+    // Validate movement against tile boundaries before applying velocity
+    const validatedVelocity = this.validateMovement(velocityX, velocityY);
+    
+    body.setVelocity(validatedVelocity.x, validatedVelocity.y);
+  }
+
+  /**
+   * Validates movement to ensure player stays on valid tiles
+   * Returns validated velocity with invalid directions set to 0
+   */
+  private validateMovement(velocityX: number, velocityY: number): { x: number; y: number } {
+    // If no level data, allow free movement (fallback)
+    if (!this.levelTiles || this.levelWidth === 0 || this.levelHeight === 0) {
+      return { x: velocityX, y: velocityY };
+    }
+
+    const currentPos = this.getPosition();
+    const lookAheadDistance = GRID_SIZE * 0.5; // Check half a tile ahead
+    let validatedX = velocityX;
+    let validatedY = velocityY;
+
+    // Check X-axis movement
+    if (velocityX !== 0) {
+      const targetX = currentPos.x + (velocityX > 0 ? lookAheadDistance : -lookAheadDistance);
+      const targetY = currentPos.y;
+      
+      if (!this.isPositionOnValidTile(targetX, targetY)) {
+        validatedX = 0;
+      }
+    }
+
+    // Check Y-axis movement
+    if (velocityY !== 0) {
+      const targetX = currentPos.x;
+      const targetY = currentPos.y + (velocityY > 0 ? lookAheadDistance : -lookAheadDistance);
+      
+      if (!this.isPositionOnValidTile(targetX, targetY)) {
+        validatedY = 0;
+      }
+    }
+
+    // For diagonal movement, check both axes independently
+    // If either axis is blocked, only allow movement on the valid axis
+    if (validatedX !== 0 && validatedY !== 0) {
+      // Re-normalize if one axis was blocked
+      // (This preserves the normalized diagonal movement if both are valid)
+    }
+
+    return { x: validatedX, y: validatedY };
+  }
+
+  /**
+   * Checks if a world position is on a valid tile (non-zero tile type)
+   */
+  private isPositionOnValidTile(worldX: number, worldY: number): boolean {
+    if (!this.levelTiles) {
+      return true; // Fallback: allow movement if no level data
+    }
+
+    // Convert world position to grid coordinates
+    const gridPos = GridUtils.worldToGrid(worldX, worldY);
+
+    // Check if grid position is within bounds
+    if (!GridUtils.isValidGridPosition(gridPos.x, gridPos.y, this.levelWidth, this.levelHeight)) {
+      return false;
+    }
+
+    // Check if tile exists and is not empty (tileType !== 0)
+    const tileType = this.levelTiles[gridPos.y]?.[gridPos.x];
+    return tileType !== undefined && tileType !== 0;
+  }
+
+  /**
+   * Sets the level data for tile validation
+   */
+  setLevelData(tiles: number[][], width: number, height: number): void {
+    this.levelTiles = tiles;
+    this.levelWidth = width;
+    this.levelHeight = height;
   }
 
   getPosition(): Position {
