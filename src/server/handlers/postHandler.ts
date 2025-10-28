@@ -4,20 +4,30 @@ import { LevelHandler } from './levelHandler';
 
 export class PostHandler {
   static async createLevelPost(levelData: LevelData): Promise<{ postId: string; success: boolean; message: string }> {
+    console.log('🚀 [PostHandler] Starting createLevelPost');
+    console.log('📊 [PostHandler] Level metadata:', {
+      name: levelData.metadata?.name,
+      author: levelData.metadata?.author,
+      created: levelData.metadata?.created
+    });
+    
     try {
       const { subredditName } = context;
+      console.log('📍 [PostHandler] Context subredditName:', subredditName);
+      
       if (!subredditName) {
         throw new Error('subredditName is required');
       }
 
+      console.log('📝 [PostHandler] Calling reddit.submitCustomPost...');
       // Create the Reddit post with level metadata
       const post = await reddit.submitCustomPost({
         splash: {
           appDisplayName: 'QuestBuddies',
           backgroundUri: 'default-splash.png',
           buttonLabel: 'Play Level',
-          description: `Play "${levelData.metadata.name}" by ${levelData.metadata.author}`,
-          heading: levelData.metadata.name,
+          description: `A custom QuestBuddies level by ${levelData.metadata.author}`,
+          heading: 'QuestBuddies Level',
           appIconUri: 'default-icon.png',
         },
         postData: {
@@ -27,14 +37,21 @@ export class PostHandler {
           created: levelData.metadata.created,
         },
         subredditName: subredditName,
-        title: `[Level] ${levelData.metadata.name} by ${levelData.metadata.author}`,
+        // Use a shorter, more readable title format for UUID-based levels
+        title: `[Level] QuestBuddies Level by ${levelData.metadata.author}`,
       });
 
+      console.log('✅ [PostHandler] Post created successfully!');
+      console.log('📌 [PostHandler] Post ID:', post.id);
+      console.log('🔗 [PostHandler] Post URL: https://reddit.com/r/' + subredditName + '/comments/' + post.id);
+
       // Save the level data to Redis using the post ID
+      console.log('💾 [PostHandler] Saving level data to Redis...');
       const saveResult = await LevelHandler.saveLevelData(post.id, levelData);
+      console.log('💾 [PostHandler] Redis save result:', saveResult);
       
       if (!saveResult.success) {
-        console.error('Failed to save level data after post creation:', saveResult.message);
+        console.error('❌ [PostHandler] Failed to save level data after post creation:', saveResult.message);
         return {
           postId: post.id,
           success: false,
@@ -42,13 +59,26 @@ export class PostHandler {
         };
       }
 
+      console.log('✅ [PostHandler] Level post created and saved successfully!');
+      console.log('🎉 [PostHandler] Final result:', {
+        postId: post.id,
+        success: true,
+        message: 'Level post created successfully'
+      });
+
       return {
         postId: post.id,
         success: true,
         message: 'Level post created successfully'
       };
     } catch (error) {
-      console.error('Error creating level post:', error);
+      console.error('❌ [PostHandler] Error creating level post:', error);
+      if (error instanceof Error) {
+        console.error('❌ [PostHandler] Error details:', {
+          message: error.message,
+          stack: error.stack
+        });
+      }
       return {
         postId: '',
         success: false,

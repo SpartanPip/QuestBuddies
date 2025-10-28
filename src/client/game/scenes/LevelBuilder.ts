@@ -192,10 +192,6 @@ export class LevelBuilder extends Scene {
       console.log('🎮 Step 9: Setting up autosave');
       this.setupAutosave();
 
-      console.log('🎮 Step 10: Adding test tile');
-      // Test tile rendering - add a test tile to verify sprites are working
-      this.addTestTile();
-
       console.log('🎮 === LEVELBUILDER SCENE CREATION COMPLETE ===');
       console.log('🎮 Final state check:', {
         hasLevelData: !!this.levelData,
@@ -1440,26 +1436,19 @@ export class LevelBuilder extends Scene {
   }
 
   private promptForLevelMetadata(): boolean {
-    // Check if metadata needs updating
+    // Generate UUID for level name if not already set or is default
     const currentName = this.levelData.metadata.name;
-    const currentAuthor = this.levelData.metadata.author;
-
-    if (currentName === 'New Level' || !currentName.trim()) {
-      const levelName = prompt('Enter level name:', currentName);
-      if (!levelName || !levelName.trim()) {
-        this.showMessage('Level name is required', 0xAA4444);
-        return false;
-      }
-      this.levelData.metadata.name = levelName.trim();
+    if (currentName === 'New Level' || currentName === 'Untitled Level' || !currentName.trim()) {
+      // Generate UUID using crypto.randomUUID() (available in modern browsers)
+      this.levelData.metadata.name = crypto.randomUUID();
+      console.log('🔑 [LevelBuilder] Generated UUID for level name:', this.levelData.metadata.name);
     }
 
+    // Author is optional, but ensure it has a default value
+    const currentAuthor = this.levelData.metadata.author;
     if (currentAuthor === 'Player' || !currentAuthor.trim()) {
-      const authorName = prompt('Enter your name:', currentAuthor);
-      if (!authorName || !authorName.trim()) {
-        this.showMessage('Author name is required', 0xAA4444);
-        return false;
-      }
-      this.levelData.metadata.author = authorName.trim();
+      // Use a default author name instead of prompting
+      this.levelData.metadata.author = 'Anonymous';
     }
 
     // Validate metadata using the helper
@@ -1647,42 +1636,5 @@ export class LevelBuilder extends Scene {
 
   getLevelData(): LevelData | null {
     return this.levelData ? { ...this.levelData } : null;
-  }
-
-  private addTestTile(): void {
-    console.log('🧪 Adding test tile to verify sprite rendering');
-    
-    // Add a test tile at position (5, 5) to verify sprites are working
-    const testX = 5;
-    const testY = 5;
-    const worldPos = GridUtils.gridToWorld(testX, testY);
-    
-    // Create a test tile sprite directly in the scene (not in a layer) to test if sprites work at all
-    const testSprite = this.add.image(worldPos.x + GRID_SIZE / 2, worldPos.y + GRID_SIZE / 2, 'tile-dirt1');
-    testSprite.setDisplaySize(GRID_SIZE, GRID_SIZE);
-    testSprite.setTint(0xFF0000); // Make it red to make it obvious
-    testSprite.setName('test_tile');
-    
-    console.log('🧪 Test tile created:', {
-      position: { x: testSprite.x, y: testSprite.y },
-      visible: testSprite.visible,
-      alpha: testSprite.alpha,
-      scale: { x: testSprite.scaleX, y: testSprite.scaleY }
-    });
-    
-    // Also add a test tile to the tile layer
-    const testTileInLayer = this.tileLayer.scene.add.image(worldPos.x + GRID_SIZE / 2, worldPos.y + GRID_SIZE / 2 + 50, 'tile-grass1');
-    testTileInLayer.setDisplaySize(GRID_SIZE, GRID_SIZE);
-    testTileInLayer.setTint(0x00FF00); // Make it green
-    testTileInLayer.setName('test_tile_in_layer');
-    this.tileLayer.add(testTileInLayer);
-    
-    console.log('🧪 Test tile in layer created:', {
-      position: { x: testTileInLayer.x, y: testTileInLayer.y },
-      visible: testTileInLayer.visible,
-      alpha: testTileInLayer.alpha,
-      scale: { x: testTileInLayer.scaleX, y: testTileInLayer.scaleY },
-      layerChildrenCount: this.tileLayer.length
-    });
   }
 }

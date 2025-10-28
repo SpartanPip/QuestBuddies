@@ -11,15 +11,21 @@ export class LevelManager {
 
   /**
    * Creates a new empty level with default settings
+   * Generates a UUID for the level name automatically
    */
-  createNewLevel(name: string = 'Untitled Level', author: string = 'Anonymous'): LevelData {
+  createNewLevel(name: string | null = null, author: string = 'Anonymous'): LevelData {
+    // Generate UUID if name is not provided or is a default value
+    const levelName = name && name !== 'Untitled Level' && name !== 'New Level' 
+      ? name 
+      : crypto.randomUUID();
+    
     const newLevel: LevelData = {
       tiles: this.createEmptyTileGrid(DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE),
       tileSprites: this.createEmptyTileSpriteGrid(DEFAULT_LEVEL_SIZE, DEFAULT_LEVEL_SIZE),
       enemies: [],
       spawn: null, // No default spawn position - user must place one
       metadata: {
-        name,
+        name: levelName,
         author,
         created: Date.now()
       }
@@ -167,8 +173,16 @@ export class LevelManager {
       throw new Error('Level metadata is required');
     }
 
-    if (typeof data.metadata.name !== 'string' || data.metadata.name.trim().length === 0) {
-      throw new Error('Level name is required and must be a non-empty string');
+    // Level name should be a string but can be empty (will be auto-generated if needed)
+    if (typeof data.metadata.name !== 'string') {
+      throw new Error('Level name must be a string');
+    }
+    
+    // Auto-generate UUID if name is missing or default
+    if (data.metadata.name.trim().length === 0 || 
+        data.metadata.name === 'New Level' || 
+        data.metadata.name === 'Untitled Level') {
+      data.metadata.name = crypto.randomUUID();
     }
 
     if (typeof data.metadata.author !== 'string') {

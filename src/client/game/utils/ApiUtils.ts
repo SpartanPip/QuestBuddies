@@ -10,27 +10,50 @@ export class ApiUtils {
    * Saves level data to Reddit post with retry logic
    */
   static async saveLevelToReddit(levelData: LevelData): Promise<{ success: boolean; message: string; postId?: string }> {
+    console.log('🌐 [ApiUtils] Starting saveLevelToReddit');
+    console.log('📊 [ApiUtils] Level data:', {
+      name: levelData.metadata?.name,
+      author: levelData.metadata?.author,
+      tilesCount: levelData.tiles?.length,
+      enemiesCount: levelData.enemies?.length
+    });
+    
     return this.retryOperation(async () => {
       const request: SaveLevelRequest = { levelData };
+      const requestBody = JSON.stringify(request);
+      
+      console.log('📤 [ApiUtils] Sending POST request to /api/save-level');
+      console.log('📦 [ApiUtils] Request payload size:', requestBody.length, 'bytes');
       
       const response = await fetch(`${this.BASE_URL}/save-level`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(request),
+        body: requestBody,
+      });
+
+      console.log('📥 [ApiUtils] Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        ok: response.ok
       });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ message: 'Unknown server error' }));
+        console.error('❌ [ApiUtils] Request failed:', errorData);
         throw new Error(errorData.message || `HTTP error ${response.status}`);
       }
 
       const data: SaveLevelResponse = await response.json();
+      console.log('📥 [ApiUtils] Response data:', data);
+      
       if (!data.success) {
+        console.error('❌ [ApiUtils] Save operation failed:', data.message);
         throw new Error(data.message || 'Save operation failed');
       }
 
+      console.log('✅ [ApiUtils] Save successful! Post ID:', data.postId);
       return {
         success: true,
         message: data.message,
@@ -141,8 +164,18 @@ export class ApiUtils {
     }
 
     const metadata = data.metadata as Record<string, unknown>;
-    if (!metadata || typeof metadata.name !== 'string' || typeof metadata.author !== 'string') {
-      return { valid: false, error: 'Level must have metadata with name and author' };
+    if (!metadata || typeof metadata.name !== 'string') {
+      return { valid: false, error: 'Level must have metadata with name (auto-generated if missing)' };
+    }
+    
+    // Auto-generate UUID if name is missing or default
+    if (metadata.name.trim() === '' || metadata.name === 'New Level' || metadata.name === 'Untitled Level') {
+      metadata.name = crypto.randomUUID();
+    }
+    
+    // Ensure author exists, default to Anonymous
+    if (!metadata.author || typeof metadata.author !== 'string' || metadata.author.trim() === '') {
+      metadata.author = 'Anonymous';
     }
 
     return { valid: true };

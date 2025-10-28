@@ -390,7 +390,9 @@ export class GamePlay extends Scene {
         const tileType = this.levelData.tiles[y]![x];
         if (tileType !== undefined && tileType !== 0) {
           const worldPos = GridUtils.gridToWorld(x, y);
-          const tileSprite = this.createTileSprite(tileType, worldPos.x, worldPos.y);
+          // Get the saved sprite from tileSprites array, or fallback to null
+          const savedSprite = this.levelData.tileSprites?.[y]?.[x] || null;
+          const tileSprite = this.createTileSprite(tileType, worldPos.x, worldPos.y, savedSprite);
           if (tileSprite) {
             tilemapContainer.add(tileSprite);
           }
@@ -399,23 +401,29 @@ export class GamePlay extends Scene {
     }
   }
 
-  private createTileSprite(tileType: number, x: number, y: number): Phaser.GameObjects.Image | null {
+  private createTileSprite(tileType: number, x: number, y: number, savedSprite: string | null = null): Phaser.GameObjects.Image | null {
     let spriteKey: string;
     
-    switch (tileType) {
-      case 1: // WALL - use dirt tiles
-        spriteKey = `tile-dirt${Math.floor(Math.random() * 9) + 1}`;
-        break;
-      case 2: // FLOOR - use grass tiles
-        spriteKey = `tile-grass${Math.floor(Math.random() * 9) + 1}`;
-        break;
-      case 3: // DECORATION - use alternating dirt/grass
-        spriteKey = (x + y) % 2 === 0 ? 
-          `tile-dirt${Math.floor(Math.random() * 9) + 1}` : 
-          `tile-grass${Math.floor(Math.random() * 9) + 1}`;
-        break;
-      default:
-        return null;
+    // Use saved sprite if available, otherwise fallback to tile type-based selection
+    if (savedSprite) {
+      spriteKey = savedSprite;
+    } else {
+      // Fallback to random generation only if no saved sprite is available
+      switch (tileType) {
+        case 1: // WALL - use dirt tiles
+          spriteKey = `tile-dirt${Math.floor(Math.random() * 9) + 1}`;
+          break;
+        case 2: // FLOOR - use grass tiles
+          spriteKey = `tile-grass${Math.floor(Math.random() * 9) + 1}`;
+          break;
+        case 3: // DECORATION - use alternating dirt/grass
+          spriteKey = (x + y) % 2 === 0 ? 
+            `tile-dirt${Math.floor(Math.random() * 9) + 1}` : 
+            `tile-grass${Math.floor(Math.random() * 9) + 1}`;
+          break;
+        default:
+          return null;
+      }
     }
     
     const tileSprite = this.add.image(x + GRID_SIZE/2, y + GRID_SIZE/2, spriteKey);

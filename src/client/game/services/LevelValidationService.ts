@@ -174,6 +174,7 @@ export class LevelValidationService {
 
   /**
    * Validates level metadata
+   * Level name is auto-generated as UUID, so we just need to ensure it exists
    * @param levelData - The level data
    * @returns ValidationResult
    */
@@ -186,12 +187,17 @@ export class LevelValidationService {
       return { isValid: false, message: 'Level metadata is missing' };
     }
 
-    if (!levelData.metadata.name || levelData.metadata.name.trim() === '') {
-      return { isValid: false, message: 'Level name is required' };
+    // Auto-generate UUID if name is missing or default
+    if (!levelData.metadata.name || 
+        levelData.metadata.name.trim() === '' ||
+        levelData.metadata.name === 'New Level' ||
+        levelData.metadata.name === 'Untitled Level') {
+      levelData.metadata.name = crypto.randomUUID();
     }
 
+    // Author should have a default value
     if (!levelData.metadata.author || levelData.metadata.author.trim() === '') {
-      return { isValid: false, message: 'Author name is required' };
+      levelData.metadata.author = 'Anonymous';
     }
 
     return { isValid: true, message: 'Metadata is valid' };
@@ -297,8 +303,18 @@ export class LevelValidationService {
     }
 
     const metadata = data.metadata as Record<string, unknown>;
-    if (!metadata || typeof metadata.name !== 'string' || typeof metadata.author !== 'string') {
-      return { isValid: false, message: 'Level must have metadata with name and author' };
+    if (!metadata || typeof metadata.name !== 'string') {
+      return { isValid: false, message: 'Level must have metadata with name (auto-generated if missing)' };
+    }
+    
+    // Auto-generate UUID if name is missing or default
+    if (metadata.name.trim() === '' || metadata.name === 'New Level' || metadata.name === 'Untitled Level') {
+      metadata.name = crypto.randomUUID();
+    }
+    
+    // Ensure author exists, default to Anonymous
+    if (!metadata.author || typeof metadata.author !== 'string' || metadata.author.trim() === '') {
+      metadata.author = 'Anonymous';
     }
 
     return { isValid: true, message: 'Data structure is valid' };
