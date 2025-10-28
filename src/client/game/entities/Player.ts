@@ -2,6 +2,7 @@ import * as Phaser from 'phaser';
 import { Position, GRID_SIZE } from '../../../shared/types/level';
 import { Weapon } from './Weapon';
 import { CustomizationData } from '../utils/StorageUtils';
+import { Enemy } from './Enemy';
 
 export class Player extends Phaser.GameObjects.Container {
   private sprite: Phaser.GameObjects.Image;
@@ -18,7 +19,7 @@ export class Player extends Phaser.GameObjects.Container {
   
   // Customization data
   private customization: CustomizationData;
-
+  
   constructor(scene: Phaser.Scene, x: number, y: number, customization?: CustomizationData) {
     super(scene, x, y);
     
@@ -34,9 +35,8 @@ export class Player extends Phaser.GameObjects.Container {
     
     // Add physics body if physics system is available
     if (scene.physics && scene.physics.add) {
-      scene.physics.add.existing(this);
+      scene.physics.add.existing(this, false);
       
-      // Enable physics body
       const body = this.body as Phaser.Physics.Arcade.Body;
       if (body) {
         body.setSize(24, 24);
@@ -54,11 +54,15 @@ export class Player extends Phaser.GameObjects.Container {
   }
 
   private setupInput(): void {
+    if (!this.scene.input.keyboard) {
+      return;
+    }
+    
     // Arrow keys
-    this.cursors = this.scene.input.keyboard!.createCursorKeys();
+    this.cursors = this.scene.input.keyboard.createCursorKeys();
     
     // WASD keys
-    this.wasdKeys = this.scene.input.keyboard!.addKeys('W,S,A,D') as { [key: string]: Phaser.Input.Keyboard.Key };
+    this.wasdKeys = this.scene.input.keyboard.addKeys('W,S,A,D') as { [key: string]: Phaser.Input.Keyboard.Key };
   }
 
   private setupTouchControls(): void {
@@ -70,12 +74,17 @@ export class Player extends Phaser.GameObjects.Container {
     }
   }
 
-  override update(_time?: number, delta?: number, enemies?: any[]): void {
+  override update(_time?: number, delta?: number, enemies?: Enemy[]): void {
     this.handleMovement();
     
     if (this.weapon && delta !== undefined) {
       this.weapon.updateWeapon(delta, enemies);
     }
+  }
+
+  setTargetPosition(_x: number, _y: number): void {
+    // Click-to-move not implemented - only keyboard/touch movement works
+    // TODO: Implement click-to-move pathfinding if needed
   }
 
   private createWeapon(): void {
@@ -85,21 +94,30 @@ export class Player extends Phaser.GameObjects.Container {
 
   private handleMovement(): void {
     const body = this.body as Phaser.Physics.Arcade.Body;
-    if (!body) return; // Exit if no physics body
+    
+    if (!body) {
+      return;
+    }
     
     let velocityX = 0;
     let velocityY = 0;
 
+    // Check keyboard input
+    const leftDown = this.cursors?.left.isDown || this.wasdKeys?.A?.isDown;
+    const rightDown = this.cursors?.right.isDown || this.wasdKeys?.D?.isDown;
+    const upDown = this.cursors?.up.isDown || this.wasdKeys?.W?.isDown;
+    const downDown = this.cursors?.down.isDown || this.wasdKeys?.S?.isDown;
+
     // Keyboard input
-    if (this.cursors?.left.isDown || this.wasdKeys?.A?.isDown) {
+    if (leftDown) {
       velocityX = -this.moveSpeed;
-    } else if (this.cursors?.right.isDown || this.wasdKeys?.D?.isDown) {
+    } else if (rightDown) {
       velocityX = this.moveSpeed;
     }
 
-    if (this.cursors?.up.isDown || this.wasdKeys?.W?.isDown) {
+    if (upDown) {
       velocityY = -this.moveSpeed;
-    } else if (this.cursors?.down.isDown || this.wasdKeys?.S?.isDown) {
+    } else if (downDown) {
       velocityY = this.moveSpeed;
     }
 

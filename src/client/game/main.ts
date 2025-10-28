@@ -23,6 +23,13 @@ const config: Phaser.Types.Core.GameConfig = {
     width: 1024,
     height: 768,
   },
+  physics: {
+    default: 'arcade',
+    arcade: {
+      gravity: { x: 0, y: 0 },
+      debug: false
+    }
+  },
   scene: [Boot, Preloader, MainMenu, GameOver, LevelBuilder, GamePlay, Customize, GridSelectionScene],
 };
 

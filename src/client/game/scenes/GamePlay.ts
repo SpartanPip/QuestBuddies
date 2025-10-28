@@ -84,6 +84,11 @@ export class GamePlay extends Scene {
 
     // Configure camera rendering
     this.configureCameraRendering();
+    
+    // Setup click-to-move for player
+    this.setupClickToMove();
+    
+    console.log('📷 Camera rendering configured');
 
     if (this.levelData) {
       this.setupLevel();
@@ -94,16 +99,26 @@ export class GamePlay extends Scene {
 
 
   private configureCameraRendering(): void {
-    // Configure cameras to render different depth ranges to prevent duplicates
-    // Main camera renders world objects (depth 0-999)
-    this.camera.ignore(this.children.list.filter(child => 'depth' in child && (child as unknown as { depth: number }).depth >= 1000));
-    
-    // UI camera renders UI elements (depth 1000+)
-    this.uiCamera.ignore(this.children.list.filter(child => 'depth' in child && (child as unknown as { depth: number }).depth < 1000));
-    
-    console.log('📷 Camera rendering configured:');
-    console.log('  - Main camera: renders depths 0-999');
-    console.log('  - UI camera: renders depths 1000+');
+    // Configure UI camera to match main camera position
+    // This ensures UI elements with scrollFactor(0) display correctly
+    this.uiCamera.setScroll(this.camera.scrollX, this.camera.scrollY);
+  }
+  
+  private setupClickToMove(): void {
+    // Listen for pointer down events
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      // Don't handle clicks if game is over or paused
+      if (this.gameState !== 'playing' || !this.player) {
+        return;
+      }
+      
+      // Convert pointer position to world coordinates
+      const worldX = this.camera.scrollX + pointer.x;
+      const worldY = this.camera.scrollY + pointer.y;
+      
+      // Set the target position for the player
+      this.player.setTargetPosition(worldX, worldY);
+    });
   }
 
   override update(time: number, delta: number) {
@@ -247,46 +262,24 @@ export class GamePlay extends Scene {
     const playerPos = this.player.getPosition();
     const screenWidth = this.cameras.main.width;
     const screenHeight = this.cameras.main.height;
+
+    // Calculate target camera position (centered on player)
+    const targetX = playerPos.x - screenWidth / 2;
+    const targetY = playerPos.y - screenHeight / 2;
+
+    // Smooth camera movement using lerp
+    const lerpFactor = 0.1;
+    const currentX = this.camera.scrollX;
+    const currentY = this.camera.scrollY;
     
-    // Calculate world bounds in pixels
-    const worldWidth = this.levelWidth * GRID_SIZE;
-    const worldHeight = this.levelHeight * GRID_SIZE;
-
-    // Only follow if the level is larger than the screen
-    if (worldWidth > screenWidth || worldHeight > screenHeight) {
-      // Calculate target camera position (centered on player)
-      let targetX = playerPos.x - screenWidth / 2;
-      let targetY = playerPos.y - screenHeight / 2;
-
-      // Apply boundary constraints
-      if (worldWidth > screenWidth) {
-        targetX = Phaser.Math.Clamp(targetX, 0, worldWidth - screenWidth);
-      } else {
-        targetX = (worldWidth - screenWidth) / 2; // Center horizontally
-      }
-
-      if (worldHeight > screenHeight) {
-        targetY = Phaser.Math.Clamp(targetY, 0, worldHeight - screenHeight);
-      } else {
-        targetY = (worldHeight - screenHeight) / 2; // Center vertically
-      }
-
-      // Smooth camera movement using lerp
-      const lerpFactor = 0.1;
-      const currentX = this.camera.scrollX;
-      const currentY = this.camera.scrollY;
-      
-      const newX = Phaser.Math.Linear(currentX, targetX, lerpFactor);
-      const newY = Phaser.Math.Linear(currentY, targetY, lerpFactor);
-      
-      this.camera.setScroll(newX, newY);
-    } else {
-      // If level is smaller than screen, center the camera
-      this.camera.setScroll(
-        (worldWidth - screenWidth) / 2,
-        (worldHeight - screenHeight) / 2
-      );
-    }
+    const newX = Phaser.Math.Linear(currentX, targetX, lerpFactor);
+    const newY = Phaser.Math.Linear(currentY, targetY, lerpFactor);
+    
+    // Update main camera
+    this.camera.setScroll(newX, newY);
+    
+    // Update UI camera to match (so UI elements with scrollFactor don't duplicate)
+    this.uiCamera.setScroll(newX, newY);
   }
 
   private setupLevel(): void {
@@ -395,7 +388,9 @@ export class GamePlay extends Scene {
   }
 
   private setupPlayer(): void {
-    if (!this.levelData || !this.levelData.spawn) return;
+    if (!this.levelData || !this.levelData.spawn) {
+      return;
+    }
 
     const spawnWorldPos = GridUtils.gridToWorldCenter(
       this.levelData.spawn.x, 
@@ -411,11 +406,10 @@ export class GamePlay extends Scene {
     
     // Set physics world bounds based on level size
     if (this.physics && this.physics.world) {
-      this.physics.world.setBounds(0, 0, this.levelWidth * GRID_SIZE, this.levelHeight * GRID_SIZE);
+      const worldWidth = this.levelWidth * GRID_SIZE;
+      const worldHeight = this.levelHeight * GRID_SIZE;
+      this.physics.world.setBounds(0, 0, worldWidth, worldHeight);
     }
-    
-    // Set camera bounds to match world bounds
-    this.camera.setBounds(0, 0, this.levelWidth * GRID_SIZE, this.levelHeight * GRID_SIZE);
     
     // Initial camera setup
     this.setupInitialCamera();
@@ -424,22 +418,9 @@ export class GamePlay extends Scene {
   private setupInitialCamera(): void {
     if (!this.player) return;
 
-    const screenWidth = this.camera.width;
-    const screenHeight = this.camera.height;
-    const worldWidth = this.levelWidth * GRID_SIZE;
-    const worldHeight = this.levelHeight * GRID_SIZE;
-
-    // If level is smaller than screen, center it
-    if (worldWidth <= screenWidth && worldHeight <= screenHeight) {
-      this.camera.setScroll(
-        (worldWidth - screenWidth) / 2,
-        (worldHeight - screenHeight) / 2
-      );
-    } else {
-      // Start camera centered on player
-      const playerPos = this.player.getPosition();
-      this.camera.centerOn(playerPos.x, playerPos.y);
-    }
+    // Start camera centered on player
+    const playerPos = this.player.getPosition();
+    this.camera.centerOn(playerPos.x, playerPos.y);
   }
 
   private setupEnemies(): void {
